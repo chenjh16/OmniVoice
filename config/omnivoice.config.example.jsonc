@@ -1,0 +1,43 @@
+{
+  // OmniVoice reads this file at ~/.config/omnivoice/config.jsonc.
+  // Keep file permissions at 0600 when api_key is filled.
+  // Use "auto" to let OmniVoice choose the fastest reachable source
+  // whose /v1/models response contains a supported speech model.
+  "active_source": "auto",
+  "default_model": "mimo-v2-omni",
+  "sources": {
+    "sgp": {
+      "base_url": "https://token-plan-sgp.xiaomimimo.com",
+      "api_key": ""
+    },
+    "cn": {
+      "base_url": "https://token-plan-cn.xiaomimimo.com",
+      "api_key": ""
+    }
+  },
+  "latency": {
+    // Set enabled to false to disable background latency checks.
+    "enabled": true,
+    // Supported values: 30, 60, 120, 300, 900, 1800, 3600.
+    // Use null for startup-only checks.
+    "interval_seconds": 1800
+  },
+  "custom_styles": {
+    // Custom transcription styles appear in the Style menu and in the result panel style switcher.
+    // Style IDs may use letters, numbers, dots, underscores, and dashes. Do not reuse a built-in style ID.
+    "meeting_notes": {
+      "display_name": "Meeting Notes",
+      "display_name_zh": "会议纪要",
+      "description": "Turn speech into concise meeting notes.",
+      "description_zh": "把口述整理成简洁会议纪要。",
+      // Most users only need to edit these prompt lines: say what tone and format you want,
+      // and name what must not be invented.
+      "prompt_lines": [
+        "Turn this audio into concise meeting notes.",
+        "Preserve explicitly spoken decisions, todos, times, names, project names, and technical terms.",
+        "Use a short line-by-line list when there are multiple points.",
+        "Do not add facts, conclusions, owners, or deadlines that the user did not say."
+      ]
+    }
+  }
+}
