@@ -60,6 +60,31 @@ struct TranscriptionInstructionTests {
         #expect(customInstruction.contains("请整理成简短客服回复"))
         #expect(customInstruction.contains("全局安全要求"))
 
+        let descriptor = TranscriptionStyleResolver.resolve(
+            selection: .custom("support_reply"),
+            customStyles: [custom]
+        )
+        let keywordGroup = KeywordGroup(
+            id: "omnivoice_terms",
+            displayName: "OmniVoice Terms",
+            keywords: ["OmniVoice", "MiMo", "MiMo", " bad\nkeyword "]
+        )
+        let keywordInstruction = TranscriptionInstructionBuilder.instruction(
+            descriptor: descriptor,
+            keywordHints: KeywordHintsContext(isEnabled: true, groups: [keywordGroup])
+        )
+        #expect(keywordInstruction.contains("请整理成简短客服回复"))
+        #expect(keywordInstruction.contains("关键词提示（仅用于语音识别消歧）"))
+        #expect(keywordInstruction.contains("不要因为列表中有某个词就强行输出它"))
+        #expect(keywordInstruction.contains("- OmniVoice Terms：OmniVoice；MiMo"))
+        #expect(!keywordInstruction.contains("bad\nkeyword"))
+
+        let disabledKeywordInstruction = TranscriptionInstructionBuilder.instruction(
+            descriptor: descriptor,
+            keywordHints: KeywordHintsContext(isEnabled: false, groups: [keywordGroup])
+        )
+        #expect(!disabledKeywordInstruction.contains("关键词提示"))
+
         let legacyChinese = TranscriptionInstructionBuilder.instruction(language: .simplifiedChinese, style: .concise)
         let legacyEnglish = TranscriptionInstructionBuilder.instruction(language: .english, style: .concise)
         #expect(legacyChinese == legacyEnglish)

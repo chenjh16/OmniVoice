@@ -13,7 +13,9 @@ public struct MimoConfig: Equatable, Sendable {
     public let resolvedSourceID: String
     public let sources: [MimoConfigSource]
     public let customStyles: [CustomTranscriptionStyle]
+    public let keywordGroups: [KeywordGroup]
     public let latencySettings: ConfigLatencySettings
+    public let preferences: ConfigPreferences
     public let warnings: [String]
 
     public init(
@@ -25,7 +27,9 @@ public struct MimoConfig: Equatable, Sendable {
         resolvedSourceID: String? = nil,
         sources: [MimoConfigSource]? = nil,
         customStyles: [CustomTranscriptionStyle] = [],
+        keywordGroups: [KeywordGroup] = [],
         latencySettings: ConfigLatencySettings = .defaultSettings,
+        preferences: ConfigPreferences? = nil,
         warnings: [String] = []
     ) {
         let normalized = baseURL.normalizedMimoBaseURL ?? baseURL
@@ -39,7 +43,9 @@ public struct MimoConfig: Equatable, Sendable {
             MimoConfigSource(id: self.resolvedSourceID, baseURL: normalized, apiKey: apiKey)
         ]
         self.customStyles = customStyles
+        self.keywordGroups = keywordGroups
         self.latencySettings = latencySettings
+        self.preferences = preferences ?? ConfigPreferences.defaultPreferences(selectedModel: defaultModel)
         self.warnings = warnings
     }
 
@@ -85,7 +91,9 @@ public struct MimoConfig: Equatable, Sendable {
             resolvedSourceID: selected.id,
             sources: sources,
             customStyles: customStyles,
+            keywordGroups: keywordGroups,
             latencySettings: latencySettings,
+            preferences: preferences.with(selectedModel: defaultModel),
             warnings: warnings
         )
     }
@@ -107,7 +115,9 @@ public struct MimoConfig: Equatable, Sendable {
             resolvedSourceID: selected.id,
             sources: sources,
             customStyles: customStyles,
+            keywordGroups: keywordGroups,
             latencySettings: latencySettings,
+            preferences: preferences.with(selectedModel: defaultModel),
             warnings: warnings
         )
     }
@@ -270,6 +280,93 @@ public struct ConfigLatencySettings: Equatable, Sendable {
     }
 }
 
+public struct ConfigPreferences: Equatable, Sendable {
+    public static let defaultEnabledKeywordGroupIDs = ["omnivoice_terms", "technical_terms"]
+
+    public let selectedModel: AllowedSpeechModel
+    public let uiLanguage: UILanguage
+    public let transcriptionStyleSelection: TranscriptionStyleSelection
+    public let keywordHintsEnabled: Bool
+    public let enabledKeywordGroupIDs: [String]
+    public let triggerKey: TriggerKey
+    public let minRecordingDuration: MinRecordingDuration
+    public let maxRecordingDuration: MaxRecordingDuration
+    public let autoInsert: Bool
+    public let launchAtLogin: Bool
+    public let hudVisualStyle: HUDVisualStyle
+    public let hudMessageDuration: HUDMessageDuration
+    public let hudRevealDelay: HUDRevealDelay
+
+    public init(
+        selectedModel: AllowedSpeechModel,
+        uiLanguage: UILanguage,
+        transcriptionStyleSelection: TranscriptionStyleSelection,
+        keywordHintsEnabled: Bool = true,
+        enabledKeywordGroupIDs: [String] = [],
+        triggerKey: TriggerKey,
+        minRecordingDuration: MinRecordingDuration,
+        maxRecordingDuration: MaxRecordingDuration,
+        autoInsert: Bool,
+        launchAtLogin: Bool,
+        hudVisualStyle: HUDVisualStyle,
+        hudMessageDuration: HUDMessageDuration,
+        hudRevealDelay: HUDRevealDelay
+    ) {
+        self.selectedModel = selectedModel
+        self.uiLanguage = uiLanguage
+        self.transcriptionStyleSelection = transcriptionStyleSelection
+        self.keywordHintsEnabled = keywordHintsEnabled
+        self.enabledKeywordGroupIDs = enabledKeywordGroupIDs
+        self.triggerKey = triggerKey
+        self.minRecordingDuration = minRecordingDuration
+        self.maxRecordingDuration = maxRecordingDuration
+        self.autoInsert = autoInsert
+        self.launchAtLogin = launchAtLogin
+        self.hudVisualStyle = hudVisualStyle
+        self.hudMessageDuration = hudMessageDuration
+        self.hudRevealDelay = hudRevealDelay
+    }
+
+    public static func defaultPreferences(
+        selectedModel: AllowedSpeechModel = .defaultModel,
+        uiLanguage: UILanguage = .defaultLanguage
+    ) -> ConfigPreferences {
+        ConfigPreferences(
+            selectedModel: selectedModel,
+            uiLanguage: uiLanguage,
+            transcriptionStyleSelection: .defaultSelection,
+            keywordHintsEnabled: true,
+            enabledKeywordGroupIDs: defaultEnabledKeywordGroupIDs,
+            triggerKey: .defaultTrigger,
+            minRecordingDuration: .defaultDuration,
+            maxRecordingDuration: .defaultDuration,
+            autoInsert: true,
+            launchAtLogin: false,
+            hudVisualStyle: .defaultStyle,
+            hudMessageDuration: .defaultDuration,
+            hudRevealDelay: .defaultDelay
+        )
+    }
+
+    public func with(selectedModel: AllowedSpeechModel? = nil, uiLanguage: UILanguage? = nil) -> ConfigPreferences {
+        ConfigPreferences(
+            selectedModel: selectedModel ?? self.selectedModel,
+            uiLanguage: uiLanguage ?? self.uiLanguage,
+            transcriptionStyleSelection: transcriptionStyleSelection,
+            keywordHintsEnabled: keywordHintsEnabled,
+            enabledKeywordGroupIDs: enabledKeywordGroupIDs,
+            triggerKey: triggerKey,
+            minRecordingDuration: minRecordingDuration,
+            maxRecordingDuration: maxRecordingDuration,
+            autoInsert: autoInsert,
+            launchAtLogin: launchAtLogin,
+            hudVisualStyle: hudVisualStyle,
+            hudMessageDuration: hudMessageDuration,
+            hudRevealDelay: hudRevealDelay
+        )
+    }
+}
+
 public enum ConfigSourceNameValidator {
     public static func isValid(_ value: String) -> Bool {
         guard let trimmed = value.nilIfBlank,
@@ -304,92 +401,443 @@ public enum CustomTranscriptionStyleValidator {
     }
 }
 
-public enum ConfigTemplateBuilder {
-    public static func template(uiLanguage: UILanguage) -> String {
+public enum ConfigDocumentWriter {
+    public static func defaultDocument(uiLanguage: UILanguage) -> String {
+        document(config: defaultConfig(uiLanguage: uiLanguage), uiLanguage: uiLanguage)
+    }
+
+    public static func document(config: MimoConfig, uiLanguage: UILanguage) -> String {
+        let text = ConfigDocumentText(language: uiLanguage)
+        var lines: [String] = ["{"]
+
+        addComment(text.fileIntro, indent: 2, to: &lines)
+        addComment(text.activeSource, indent: 2, to: &lines)
+        lines.append("  \"active_source\": \(jsonString(config.activeSourceID)),")
+        addComment(text.defaultModel, indent: 2, to: &lines)
+        lines.append("  \"default_model\": \(jsonString(config.defaultModel.rawValue)),")
+        addComment(text.sources, indent: 2, to: &lines)
+        lines.append("  \"sources\": {")
+        let sources = config.sources.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+        for (index, source) in sources.enumerated() {
+            addComment(text.source(source.id), indent: 4, to: &lines)
+            lines.append("    \(jsonString(source.id)): {")
+            addComment(text.baseURL, indent: 6, to: &lines)
+            lines.append("      \"base_url\": \(jsonString(source.baseURL.absoluteString)),")
+            addComment(text.apiKey, indent: 6, to: &lines)
+            lines.append("      \"api_key\": \(jsonString(source.apiKey ?? ""))")
+            lines.append("    }\(index == sources.count - 1 ? "" : ",")")
+        }
+        lines.append("  },")
+
+        addComment(text.latency, indent: 2, to: &lines)
+        lines.append("  \"latency\": {")
+        addComment(text.latencyEnabled, indent: 4, to: &lines)
+        lines.append("    \"enabled\": \(config.latencySettings.interval == .off ? "false" : "true"),")
+        addComment(text.latencyInterval, indent: 4, to: &lines)
+        if let seconds = config.latencySettings.interval.seconds {
+            lines.append("    \"interval_seconds\": \(seconds)")
+        } else {
+            lines.append("    \"interval_seconds\": null")
+        }
+        lines.append("  },")
+
+        let preferences = config.preferences.with(selectedModel: config.defaultModel, uiLanguage: uiLanguage)
+        addComment(text.preferences, indent: 2, to: &lines)
+        lines.append("  \"preferences\": {")
+        addComment(text.uiLanguage, indent: 4, to: &lines)
+        lines.append("    \"ui_language\": \(jsonString(preferences.uiLanguage.rawValue)),")
+        addComment(text.transcriptionStyle, indent: 4, to: &lines)
+        lines.append("    \"transcription_style\": \(jsonString(preferences.transcriptionStyleSelection.rawValue)),")
+        addComment(text.keywordHintsEnabled, indent: 4, to: &lines)
+        lines.append("    \"keyword_hints_enabled\": \(preferences.keywordHintsEnabled ? "true" : "false"),")
+        addComment(text.enabledKeywordGroups, indent: 4, to: &lines)
+        lines.append("    \"enabled_keyword_groups\": \(jsonStringArray(preferences.enabledKeywordGroupIDs)),")
+        addComment(text.triggerKey, indent: 4, to: &lines)
+        lines.append("    \"trigger_key\": \(jsonString(preferences.triggerKey.identifier)),")
+        addComment(text.minRecording, indent: 4, to: &lines)
+        lines.append("    \"min_recording_duration_ms\": \(preferences.minRecordingDuration.rawValue),")
+        addComment(text.maxRecording, indent: 4, to: &lines)
+        lines.append("    \"max_recording_duration_seconds\": \(preferences.maxRecordingDuration.rawValue),")
+        addComment(text.autoInsert, indent: 4, to: &lines)
+        lines.append("    \"auto_insert\": \(preferences.autoInsert ? "true" : "false"),")
+        addComment(text.launchAtLogin, indent: 4, to: &lines)
+        lines.append("    \"launch_at_login\": \(preferences.launchAtLogin ? "true" : "false"),")
+        addComment(text.hud, indent: 4, to: &lines)
+        lines.append("    \"hud\": {")
+        addComment(text.hudVisualStyle, indent: 6, to: &lines)
+        lines.append("      \"visual_style\": \(jsonString(preferences.hudVisualStyle.rawValue)),")
+        addComment(text.hudMessageDuration, indent: 6, to: &lines)
+        lines.append("      \"message_duration_seconds\": \(preferences.hudMessageDuration.rawValue),")
+        addComment(text.hudRevealDelay, indent: 6, to: &lines)
+        lines.append("      \"reveal_delay_ms\": \(preferences.hudRevealDelay.rawValue)")
+        lines.append("    }")
+        lines.append("  },")
+
+        addComment(text.customStyles, indent: 2, to: &lines)
+        lines.append("  \"custom_styles\": {")
+        let styles = config.customStyles.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+        for (index, style) in styles.enumerated() {
+            addComment(text.customStyle(style.id), indent: 4, to: &lines)
+            lines.append("    \(jsonString(style.id)): {")
+            addComment(text.customDisplayName, indent: 6, to: &lines)
+            lines.append("      \"display_name\": \(jsonString(style.displayName)),")
+            addComment(text.customDisplayNameZH, indent: 6, to: &lines)
+            lines.append("      \"display_name_zh\": \(jsonString(style.displayNameZH ?? style.displayName)),")
+            addComment(text.customDescription, indent: 6, to: &lines)
+            lines.append("      \"description\": \(jsonString(style.description ?? "")),")
+            addComment(text.customDescriptionZH, indent: 6, to: &lines)
+            lines.append("      \"description_zh\": \(jsonString(style.descriptionZH ?? "")),")
+            addComment(text.customPromptLines, indent: 6, to: &lines)
+            lines.append("      \"prompt_lines\": [")
+            let promptLines = style.prompt.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            for (lineIndex, promptLine) in promptLines.enumerated() {
+                lines.append("        \(jsonString(promptLine))\(lineIndex == promptLines.count - 1 ? "" : ",")")
+            }
+            lines.append("      ]")
+            lines.append("    }\(index == styles.count - 1 ? "" : ",")")
+        }
+        lines.append("  },")
+
+        addComment(text.keywordGroups, indent: 2, to: &lines)
+        lines.append("  \"keyword_groups\": {")
+        let keywordGroups = config.keywordGroups.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+        for (index, group) in keywordGroups.enumerated() {
+            addComment(text.keywordGroup(group.id), indent: 4, to: &lines)
+            lines.append("    \(jsonString(group.id)): {")
+            addComment(text.keywordDisplayName, indent: 6, to: &lines)
+            lines.append("      \"display_name\": \(jsonString(group.displayName ?? group.displayNameZH ?? group.id)),")
+            if let description = group.description ?? group.descriptionZH {
+                addComment(text.keywordDescription, indent: 6, to: &lines)
+                lines.append("      \"description\": \(jsonString(description)),")
+            }
+            addComment(text.keywords, indent: 6, to: &lines)
+            lines.append("      \"keywords\": [")
+            for (keywordIndex, keyword) in group.keywords.enumerated() {
+                lines.append("        \(jsonString(keyword))\(keywordIndex == group.keywords.count - 1 ? "" : ",")")
+            }
+            lines.append("      ]")
+            lines.append("    }\(index == keywordGroups.count - 1 ? "" : ",")")
+        }
+        lines.append("  }")
+        lines.append("}")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func defaultConfig(uiLanguage: UILanguage) -> MimoConfig {
+        let source = MimoConfigSource(
+            id: "config1",
+            baseURL: MimoConfig.defaultBaseURL,
+            apiKey: ""
+        )
+        return MimoConfig(
+            baseURL: source.baseURL,
+            apiKey: nil,
+            defaultModel: .defaultModel,
+            source: .configFile,
+            activeSourceID: MimoConfig.autoSourceID,
+            resolvedSourceID: source.id,
+            sources: [source],
+            customStyles: [defaultCustomStyle(uiLanguage: uiLanguage)],
+            keywordGroups: defaultKeywordGroups(uiLanguage: uiLanguage),
+            latencySettings: .defaultSettings,
+            preferences: .defaultPreferences(selectedModel: .defaultModel, uiLanguage: uiLanguage)
+        )
+    }
+
+    private static func defaultKeywordGroups(uiLanguage: UILanguage) -> [KeywordGroup] {
         switch uiLanguage {
         case .chinese:
-            return """
-            {
-              // OmniVoice 会读取这个文件：~/.config/omnivoice/config.jsonc
-              // active_source 可以写成 "auto"，让 OmniVoice 自动选择最快可用来源。
-              "active_source": "auto",
-              "default_model": "mimo-v2-omni",
-              "sources": {
-                // 你可以把 config1 改成更容易识别的名字，例如 sgp、cn 或 work。
-                "config1": {
-                  // Base URL 可以带或不带 /v1，OmniVoice 会自动归一化。
-                  "base_url": "https://token-plan-sgp.xiaomimimo.com",
-                  // 填入你的 API Key；保存后请保持本文件权限为 0600。
-                  "api_key": ""
-                }
-              },
-              "latency": {
-                // 用 /v1/models 做轻量测速，不发送语音。
-                "enabled": true,
-                "interval_seconds": 1800
-              },
-              "custom_styles": {
-                // 自定义转写风格会出现在“风格”菜单和结果面板的风格切换中。
-                // 风格 ID 只能使用字母、数字、点、下划线和短横线，且不能和内置风格重名。
-                "meeting_notes": {
-                  "display_name": "Meeting Notes",
-                  "display_name_zh": "会议纪要",
-                  "description": "Turn speech into concise meeting notes.",
-                  "description_zh": "把口述整理成简洁会议纪要。",
-                  // 普通用户建议优先修改下面几行：写清楚想要的语气、格式和禁止事项。
-                  // 不要要求模型新增事实、收件人、署名、承诺或没有说出的内容。
-                  "prompt_lines": [
+            return [
+                KeywordGroup(
+                    id: "omnivoice_terms",
+                    displayName: "OmniVoice 术语",
+                    description: "项目和 API 相关术语。",
+                    keywords: ["OmniVoice", "MiMo", "mimo-v2-omni", "config.jsonc", "ActionPanel", "HUD", "Panel"]
+                ),
+                KeywordGroup(
+                    id: "technical_terms",
+                    displayName: "技术术语",
+                    description: "代码、命令和 macOS 相关术语。",
+                    keywords: ["Swift", "AppKit", "macOS", "JSONC", "API", "make run", "Cmd+V", "Fn"]
+                )
+            ]
+        case .english:
+            return [
+                KeywordGroup(
+                    id: "omnivoice_terms",
+                    displayName: "OmniVoice Terms",
+                    description: "Project and API vocabulary.",
+                    keywords: ["OmniVoice", "MiMo", "mimo-v2-omni", "config.jsonc", "ActionPanel", "HUD", "Panel"]
+                ),
+                KeywordGroup(
+                    id: "technical_terms",
+                    displayName: "Technical Terms",
+                    description: "Code, command, and macOS vocabulary.",
+                    keywords: ["Swift", "AppKit", "macOS", "JSONC", "API", "make run", "Cmd+V", "Fn"]
+                )
+            ]
+        }
+    }
+
+    private static func defaultCustomStyle(uiLanguage: UILanguage) -> CustomTranscriptionStyle {
+        switch uiLanguage {
+        case .chinese:
+            return CustomTranscriptionStyle(
+                id: "meeting_notes",
+                displayName: "Meeting Notes",
+                displayNameZH: "会议纪要",
+                description: "Turn speech into concise meeting notes.",
+                descriptionZH: "把口述整理成简洁会议纪要。",
+                prompt: [
                     "请把这段音频整理成简洁会议纪要。",
                     "保留明确说出的决定、待办、时间、人名、项目名和技术词。",
                     "如果有多个要点，使用简短的换行列表。",
                     "不要新增用户没有说出的事实、结论、负责人或截止日期。"
-                  ]
-                }
-              }
-            }
-            """
+                ].joined(separator: "\n")
+            )
         case .english:
-            return """
-            {
-              // OmniVoice reads this file at ~/.config/omnivoice/config.jsonc.
-              // Set active_source to "auto" to let OmniVoice choose the fastest usable source.
-              "active_source": "auto",
-              "default_model": "mimo-v2-omni",
-              "sources": {
-                // Rename config1 to a memorable source name, such as sgp, cn, or work.
-                "config1": {
-                  // Base URL may include /v1; OmniVoice normalizes it automatically.
-                  "base_url": "https://token-plan-sgp.xiaomimimo.com",
-                  // Fill in your API key and keep this file permission at 0600.
-                  "api_key": ""
-                }
-              },
-              "latency": {
-                // Uses /v1/models for lightweight latency checks. No voice audio is sent.
-                "enabled": true,
-                "interval_seconds": 1800
-              },
-              "custom_styles": {
-                // Custom transcription styles appear in the Style menu and in the result panel style switcher.
-                // Style IDs may use letters, numbers, dots, underscores, and dashes. Do not reuse a built-in style ID.
-                "meeting_notes": {
-                  "display_name": "Meeting Notes",
-                  "display_name_zh": "会议纪要",
-                  "description": "Turn speech into concise meeting notes.",
-                  "description_zh": "把口述整理成简洁会议纪要。",
-                  // Most users only need to edit these prompt lines: say what tone and format you want,
-                  // and name what must not be invented.
-                  "prompt_lines": [
+            return CustomTranscriptionStyle(
+                id: "meeting_notes",
+                displayName: "Meeting Notes",
+                displayNameZH: "会议纪要",
+                description: "Turn speech into concise meeting notes.",
+                descriptionZH: "把口述整理成简洁会议纪要。",
+                prompt: [
                     "Turn this audio into concise meeting notes.",
                     "Preserve explicitly spoken decisions, todos, times, names, project names, and technical terms.",
                     "Use a short line-by-line list when there are multiple points.",
                     "Do not add facts, conclusions, owners, or deadlines that the user did not say."
-                  ]
-                }
-              }
-            }
-            """
+                ].joined(separator: "\n")
+            )
         }
+    }
+
+    private static func addComment(_ comment: [String], indent: Int, to lines: inout [String]) {
+        let prefix = String(repeating: " ", count: indent) + "// "
+        comment.forEach { lines.append(prefix + $0) }
+    }
+
+    private static func jsonString(_ value: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+              let raw = String(data: data, encoding: .utf8),
+              raw.count >= 2 else {
+            return "\"\""
+        }
+        return String(raw.dropFirst().dropLast())
+    }
+
+    private static func jsonStringArray(_ values: [String]) -> String {
+        let encoded = values.map(jsonString).joined(separator: ", ")
+        return "[\(encoded)]"
+    }
+}
+
+private struct ConfigDocumentText {
+    let language: UILanguage
+
+    var fileIntro: [String] {
+        switch language {
+        case .chinese:
+            return [
+                "OmniVoice 会读取这个文件：~/.config/omnivoice/config.jsonc。",
+                "如果填写了 API Key，请保持本文件权限为 0600。"
+            ]
+        case .english:
+            return [
+                "OmniVoice reads this file at ~/.config/omnivoice/config.jsonc.",
+                "Keep this file at permission 0600 when an API key is filled in."
+            ]
+        }
+    }
+
+    var activeSource: [String] {
+        language == .chinese
+            ? ["API 来源 ID。使用 \"auto\" 时，OmniVoice 会选择测速最快且支持语音模型的来源。"]
+            : ["API source ID. Use \"auto\" to let OmniVoice choose the fastest source that supports speech models."]
+    }
+
+    var defaultModel: [String] {
+        language == .chinese
+            ? ["默认语音转写模型。只支持 mimo-v2-omni 或 mimo-v2.5。"]
+            : ["Default speech transcription model. Only mimo-v2-omni and mimo-v2.5 are supported."]
+    }
+
+    var sources: [String] {
+        language == .chinese
+            ? ["API 来源列表。每个 key 是来源 ID，只能使用字母、数字、点、下划线和短横线。"]
+            : ["API sources. Each key is a source ID using letters, numbers, dots, underscores, or dashes."]
+    }
+
+    func source(_ id: String) -> [String] {
+        language == .chinese ? ["来源 \(id)。"] : ["Source \(id)."]
+    }
+
+    var baseURL: [String] {
+        language == .chinese
+            ? ["Base URL 可以带或不带 /v1，OmniVoice 会自动归一化。"]
+            : ["Base URL may include /v1; OmniVoice normalizes it automatically."]
+    }
+
+    var apiKey: [String] {
+        language == .chinese
+            ? ["填入这个来源的 API Key。菜单和日志只会显示脱敏状态。"]
+            : ["API key for this source. Menus and logs only show redacted status."]
+    }
+
+    var latency: [String] {
+        language == .chinese
+            ? ["测速设置。只访问 /v1/models，不发送语音。"]
+            : ["Latency settings. Only /v1/models is called; no voice audio is sent."]
+    }
+
+    var latencyEnabled: [String] {
+        language == .chinese ? ["是否启用后台测速。"] : ["Whether background latency checks are enabled."]
+    }
+
+    var latencyInterval: [String] {
+        language == .chinese
+            ? ["测速间隔秒数。支持 30、60、120、300、900、1800、3600；null 表示只在启动时测速。"]
+            : ["Latency interval in seconds. Supported: 30, 60, 120, 300, 900, 1800, 3600; null means startup only."]
+    }
+
+    var preferences: [String] {
+        language == .chinese
+            ? ["菜单中可设置的用户偏好。OmniVoice 会用这些值同步菜单状态。"]
+            : ["User preferences exposed in the menu. OmniVoice syncs menu state from these values."]
+    }
+
+    var uiLanguage: [String] {
+        language == .chinese ? ["界面语言，同时决定本文件注释语言。"] : ["UI language; also controls the language of comments in this file."]
+    }
+
+    var transcriptionStyle: [String] {
+        language == .chinese
+            ? ["默认转写风格。可使用 concise、verbatim、codeFaithful、rewrite，或 custom:<风格 ID>。"]
+            : ["Default transcription style. Use concise, verbatim, codeFaithful, rewrite, or custom:<style ID>."]
+    }
+
+    var keywordHintsEnabled: [String] {
+        language == .chinese
+            ? ["是否启用关键词提示。关闭后不会把任何关键词注入转写 prompt。"]
+            : ["Whether keyword hints are enabled. When off, no keywords are injected into the transcription prompt."]
+    }
+
+    var enabledKeywordGroups: [String] {
+        language == .chinese
+            ? [
+                "当前启用的关键词组 ID。可以在菜单里多选，也可以直接编辑这里。"
+            ]
+            : [
+                "Enabled keyword group IDs. You can multi-select them in the menu or edit this list directly."
+            ]
+    }
+
+    var triggerKey: [String] {
+        language == .chinese
+            ? ["录音触发键。默认 fn-globe；也可使用菜单中展示的 F1-F12、修饰键或 Caps Lock ID。"]
+            : ["Recording trigger key. Default is fn-globe; menu-listed F1-F12, modifier, and Caps Lock IDs are also supported."]
+    }
+
+    var minRecording: [String] {
+        language == .chinese ? ["最短录音时间，单位毫秒。"] : ["Minimum recording duration in milliseconds."]
+    }
+
+    var maxRecording: [String] {
+        language == .chinese ? ["最长录音时间，单位秒。"] : ["Maximum recording duration in seconds."]
+    }
+
+    var autoInsert: [String] {
+        language == .chinese ? ["是否在目标输入框安全可写时自动插入最终文本。"] : ["Whether final text is auto-inserted when the focused field is safe."]
+    }
+
+    var launchAtLogin: [String] {
+        language == .chinese ? ["是否开机自启。菜单切换时也会同步系统登录项。"] : ["Whether to launch at login. Menu changes also sync the system Login Item."]
+    }
+
+    var hud: [String] {
+        language == .chinese ? ["HUD 和短提示显示设置。"] : ["HUD and short-message display settings."]
+    }
+
+    var hudVisualStyle: [String] {
+        language == .chinese
+            ? ["HUD 视觉样式：automatic 会跟随系统亮暗外观；也可固定为 darkCapsule、lightCapsule；macOS 26+ 可使用 liquidGlass。"]
+            : ["HUD visual style: automatic follows the system light/dark appearance; fixed darkCapsule and lightCapsule are also available; liquidGlass is available on macOS 26+."]
+    }
+
+    var hudMessageDuration: [String] {
+        language == .chinese ? ["短状态或 warning 提示停留秒数。"] : ["How many seconds short status or warning messages stay visible."]
+    }
+
+    var hudRevealDelay: [String] {
+        language == .chinese
+            ? ["按下触发键后多久显示聆听 HUD，单位毫秒。录音仍会立即开始。"]
+            : ["Delay before the listening HUD appears after pressing the trigger, in milliseconds. Recording starts immediately."]
+    }
+
+    var customStyles: [String] {
+        language == .chinese
+            ? ["自定义转写风格，会显示在“风格”菜单和结果面板风格切换中。"]
+            : ["Custom transcription styles shown in the Style menu and result-panel style switcher."]
+    }
+
+    func customStyle(_ id: String) -> [String] {
+        language == .chinese ? ["自定义风格 \(id)。"] : ["Custom style \(id)."]
+    }
+
+    var customDisplayName: [String] {
+        language == .chinese ? ["英文显示名。"] : ["English display name."]
+    }
+
+    var customDisplayNameZH: [String] {
+        language == .chinese ? ["中文显示名。"] : ["Chinese display name."]
+    }
+
+    var customDescription: [String] {
+        language == .chinese ? ["英文说明，会用作菜单 tooltip。"] : ["English description, used as a menu tooltip."]
+    }
+
+    var customDescriptionZH: [String] {
+        language == .chinese ? ["中文说明，会用作菜单 tooltip。"] : ["Chinese description, used as a menu tooltip."]
+    }
+
+    var customPromptLines: [String] {
+        language == .chinese
+            ? ["转写 prompt。写清楚语气、格式和禁止事项，不要要求新增用户没说的事实。"]
+            : ["Transcription prompt. State tone, format, and constraints; do not ask for facts the user did not say."]
+    }
+
+    var keywordGroups: [String] {
+        language == .chinese
+            ? ["关键词组会作为识别提示注入 prompt，用于专有名词、产品名、命令、路径和领域术语消歧。"]
+            : ["Keyword groups are injected as recognition hints for proper nouns, product names, commands, paths, and domain terms."]
+    }
+
+    func keywordGroup(_ id: String) -> [String] {
+        language == .chinese ? ["关键词组 \(id)。"] : ["Keyword group \(id)."]
+    }
+
+    var keywordDisplayName: [String] {
+        language == .chinese
+            ? ["显示名。只写一种语言即可；另一种界面语言会自动回退到已有名称。"]
+            : ["Display name. One language is enough; the other UI language falls back to the name that exists."]
+    }
+
+    var keywordDescription: [String] {
+        language == .chinese
+            ? ["说明，会用作菜单 tooltip；只写一种语言即可。"]
+            : ["Description used as the menu tooltip; one language is enough."]
+    }
+
+    var keywords: [String] {
+        language == .chinese
+            ? ["关键词列表。每组最多 200 个；总计最多注入 500 个；不要写换行或控制字符。"]
+            : ["Keyword list. Up to 200 per group and 500 injected in total; do not include newlines or control characters."]
+    }
+}
+
+public enum ConfigTemplateBuilder {
+    public static func template(uiLanguage: UILanguage) -> String {
+        ConfigDocumentWriter.defaultDocument(uiLanguage: uiLanguage)
     }
 }
 
@@ -416,6 +864,11 @@ public struct ConfigRedactedStatus: Equatable, Sendable {
     }
 }
 
+public enum ConfigValidationLoadResult: Equatable, Sendable {
+    case valid(MimoConfig)
+    case invalid([String])
+}
+
 public struct ConfigLoader {
     public var configFileURL: URL
     public var fileManager: FileManager
@@ -440,13 +893,106 @@ public struct ConfigLoader {
         return MimoConfig(source: .missing, warnings: ["Config file missing"])
     }
 
+    public func ensureValidConfig(uiLanguage: UILanguage) -> MimoConfig {
+        if fileManager.fileExists(atPath: configFileURL.path),
+           let object = readJSONObject(url: configFileURL),
+           validationIssues(for: object).isEmpty,
+           let file = readFileConfig(url: configFileURL, source: .configFile) {
+            return file
+        }
+
+        if fileManager.fileExists(atPath: configFileURL.path) {
+            _ = backupExistingConfig()
+        }
+        guard writeDefaultConfig(uiLanguage: uiLanguage) else {
+            return load()
+        }
+        return load()
+    }
+
+    public func loadValidConfigWithoutRepair() -> ConfigValidationLoadResult {
+        guard fileManager.fileExists(atPath: configFileURL.path) else {
+            return .invalid(["missing"])
+        }
+        guard let object = readJSONObject(url: configFileURL) else {
+            return .invalid(["unreadable"])
+        }
+        let issues = validationIssues(for: object)
+        guard issues.isEmpty else {
+            return .invalid(issues)
+        }
+        guard let config = readFileConfig(url: configFileURL, source: .configFile),
+              config.source == .configFile else {
+            return .invalid(["unreadable"])
+        }
+        return .valid(config)
+    }
+
     @discardableResult
-    public func saveActiveSource(_ activeSourceID: String) -> Bool {
+    public func exportCurrentConfigSnapshot(
+        _ config: MimoConfig,
+        uiLanguage: UILanguage,
+        now: Date = Date()
+    ) -> URL? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let outputURL = configFileURL.deletingLastPathComponent()
+            .appendingPathComponent("config.current-\(formatter.string(from: now)).jsonc")
+        do {
+            try fileManager.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let text = ConfigDocumentWriter.document(config: config, uiLanguage: uiLanguage)
+            try Data(text.utf8).write(to: outputURL, options: .atomic)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
+            return outputURL
+        } catch {
+            return nil
+        }
+    }
+
+    @discardableResult
+    public func backupExistingConfig(now: Date = Date()) -> URL? {
+        guard fileManager.fileExists(atPath: configFileURL.path) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let backupURL = configFileURL.deletingLastPathComponent()
+            .appendingPathComponent("config.jsonc.bak-\(formatter.string(from: now))")
+        do {
+            if fileManager.fileExists(atPath: backupURL.path) {
+                try fileManager.removeItem(at: backupURL)
+            }
+            try fileManager.copyItem(at: configFileURL, to: backupURL)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
+            return backupURL
+        } catch {
+            return nil
+        }
+    }
+
+    @discardableResult
+    public func saveActiveSource(_ activeSourceID: String, uiLanguage: UILanguage? = nil) -> Bool {
         let activeID = activeSourceID.nilIfBlank ?? MimoConfig.defaultSourceID
         guard activeID == MimoConfig.autoSourceID || ConfigSourceNameValidator.isValid(activeID) else { return false }
-        var object = existingJSONObjectForSave()
-        object["active_source"] = activeID
-        return writeJSONObject(object)
+        let current = ensureValidConfig(uiLanguage: preferredWriteLanguage(fallback: uiLanguage ?? .defaultLanguage))
+        guard activeID == MimoConfig.autoSourceID || current.sources.contains(where: { $0.id == activeID }) else {
+            return false
+        }
+        let selected = APISourceResolver.resolvedSource(activeSourceID: activeID, sources: current.sources, latencyResults: [:])
+        let output = MimoConfig(
+            baseURL: selected?.baseURL ?? current.baseURL,
+            apiKey: selected?.apiKey ?? current.apiKey,
+            defaultModel: current.defaultModel,
+            source: .configFile,
+            activeSourceID: activeID,
+            resolvedSourceID: selected?.id ?? current.resolvedSourceID,
+            sources: current.sources,
+            customStyles: current.customStyles,
+            keywordGroups: current.keywordGroups,
+            latencySettings: current.latencySettings,
+            preferences: current.preferences
+        )
+        return writeConfig(output, uiLanguage: output.preferences.uiLanguage)
     }
 
     @discardableResult
@@ -454,53 +1000,60 @@ public struct ConfigLoader {
         guard !fileManager.fileExists(atPath: configFileURL.path) else {
             return true
         }
-        do {
-            let directory = configFileURL.deletingLastPathComponent()
-            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            let data = Data(ConfigTemplateBuilder.template(uiLanguage: uiLanguage).utf8)
-            try data.write(to: configFileURL, options: .atomic)
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFileURL.path)
-            return true
-        } catch {
-            return false
-        }
+        return writeDefaultConfig(uiLanguage: uiLanguage)
     }
 
     @discardableResult
-    public func saveLatencyInterval(_ interval: ConfigLatencyInterval) -> Bool {
-        var object = existingJSONObjectForSave()
-        var latency = object["latency"] as? [String: Any] ?? [:]
-        latency["enabled"] = interval != .off
-        if let seconds = interval.seconds {
-            latency["interval_seconds"] = seconds
-        } else {
-            latency["interval_seconds"] = NSNull()
-        }
-        latency.removeValue(forKey: "interval_minutes")
-        object["latency"] = latency
-        return writeJSONObject(object)
+    public func saveLatencyInterval(_ interval: ConfigLatencyInterval, uiLanguage: UILanguage? = nil) -> Bool {
+        let current = ensureValidConfig(uiLanguage: preferredWriteLanguage(fallback: uiLanguage ?? .defaultLanguage))
+        let output = MimoConfig(
+            baseURL: current.baseURL,
+            apiKey: current.apiKey,
+            defaultModel: current.defaultModel,
+            source: .configFile,
+            activeSourceID: current.activeSourceID,
+            resolvedSourceID: current.resolvedSourceID,
+            sources: current.sources,
+            customStyles: current.customStyles,
+            keywordGroups: current.keywordGroups,
+            latencySettings: ConfigLatencySettings(interval: interval),
+            preferences: current.preferences
+        )
+        return writeConfig(output, uiLanguage: output.preferences.uiLanguage)
     }
 
-    private func existingJSONObjectForSave() -> [String: Any] {
-        if let object = readJSONObject(url: configFileURL) {
-            return object
-        }
-        return [
-            "active_source": MimoConfig.autoSourceID,
-            "default_model": AllowedSpeechModel.defaultModel.rawValue,
-            "sources": [:],
-            "latency": [
-                "enabled": true,
-                "interval_seconds": ConfigLatencyInterval.defaultInterval.rawValue
-            ]
-        ]
+    @discardableResult
+    public func savePreferences(_ preferences: ConfigPreferences) -> Bool {
+        let current = ensureValidConfig(uiLanguage: preferences.uiLanguage)
+        let output = MimoConfig(
+            baseURL: current.baseURL,
+            apiKey: current.apiKey,
+            defaultModel: preferences.selectedModel,
+            source: .configFile,
+            activeSourceID: current.activeSourceID,
+            resolvedSourceID: current.resolvedSourceID,
+            sources: current.sources,
+            customStyles: current.customStyles,
+            keywordGroups: current.keywordGroups,
+            latencySettings: current.latencySettings,
+            preferences: preferences
+        )
+        return writeConfig(output, uiLanguage: preferences.uiLanguage)
     }
 
-    private func writeJSONObject(_ object: [String: Any]) -> Bool {
+    private func writeDefaultConfig(uiLanguage: UILanguage) -> Bool {
+        writeString(ConfigTemplateBuilder.template(uiLanguage: uiLanguage))
+    }
+
+    private func writeConfig(_ config: MimoConfig, uiLanguage: UILanguage) -> Bool {
+        writeString(ConfigDocumentWriter.document(config: config, uiLanguage: uiLanguage))
+    }
+
+    private func writeString(_ text: String) -> Bool {
         do {
             let directory = configFileURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-            let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            let data = Data(text.utf8)
             try data.write(to: configFileURL, options: .atomic)
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFileURL.path)
             return true
@@ -531,7 +1084,9 @@ public struct ConfigLoader {
                     resolvedSourceID: parsed.resolvedSourceID,
                     sources: parsed.sources,
                     customStyles: parsed.customStyles,
+                    keywordGroups: parsed.keywordGroups,
                     latencySettings: parsed.latencySettings,
+                    preferences: parsed.preferences,
                     warnings: parsed.warnings + ["Config warning: config.jsonc containing secrets should be chmod 600"]
                 )
             }
@@ -559,6 +1114,9 @@ public struct ConfigLoader {
         let latencySettings = parseLatencySettings(object["latency"] as? [String: Any])
         let sources = parseSources(object: object)
         let customStyles = parseCustomStyles(object["custom_styles"] as? [String: Any])
+        let keywordParse = parseKeywordGroups(object["keyword_groups"] as? [String: Any])
+        let preferences = parsePreferences(object["preferences"] as? [String: Any], selectedModel: defaultModel)
+            ?? .defaultPreferences(selectedModel: defaultModel)
         let activeID = (object["active_source"] as? String)?.nilIfBlank
             ?? MimoConfig.autoSourceID
         let selected = APISourceResolver.resolvedSource(
@@ -566,9 +1124,21 @@ public struct ConfigLoader {
             sources: sources,
             latencyResults: [:]
         )
-        var outputWarnings = warnings
+        var outputWarnings = warnings + keywordParse.warnings
+        if preferences.keywordHintsEnabled {
+            let enabledIDs = Set(preferences.enabledKeywordGroupIDs)
+            let enabledKeywordCount = keywordParse.groups
+                .filter { enabledIDs.contains($0.id) }
+                .reduce(0) { $0 + $1.keywords.count }
+            if enabledKeywordCount > KeywordGroupValidator.maxTotalKeywords {
+                outputWarnings.append("Config warning: keyword hints exceed total limit")
+            }
+        }
         if object["sources"] == nil {
             outputWarnings.append("Config warning: config.jsonc must use sources")
+        }
+        if object["preferences"] == nil {
+            outputWarnings.append("Config warning: config.jsonc must include preferences")
         }
         if activeID == MimoConfig.autoSourceID {
             // Auto is resolved after latency checks; use the first source until measurements arrive.
@@ -579,7 +1149,9 @@ public struct ConfigLoader {
             return MimoConfig(
                 source: .missing,
                 customStyles: customStyles,
+                keywordGroups: keywordParse.groups,
                 latencySettings: latencySettings,
+                preferences: preferences,
                 warnings: outputWarnings + ["Config warning: config.jsonc needs at least one source"]
             )
         }
@@ -592,7 +1164,9 @@ public struct ConfigLoader {
             resolvedSourceID: selected.id,
             sources: sources,
             customStyles: customStyles,
+            keywordGroups: keywordParse.groups,
             latencySettings: latencySettings,
+            preferences: preferences,
             warnings: outputWarnings
         )
     }
@@ -621,16 +1195,82 @@ public struct ConfigLoader {
                   let object = value as? [String: Any] else { return nil }
             let prompt = customPrompt(from: object)
             guard CustomTranscriptionStyleValidator.isValidPrompt(prompt) else { return nil }
-            let displayName = (object["display_name"] as? String)?.nilIfBlank ?? id
+            let displayName = (object["display_name"] as? String)?.nilIfBlank
+                ?? (object["display_name_zh"] as? String)?.nilIfBlank
+                ?? id
             return CustomTranscriptionStyle(
                 id: id,
                 displayName: displayName,
-                displayNameZH: object["display_name_zh"] as? String,
-                description: object["description"] as? String,
-                descriptionZH: object["description_zh"] as? String,
+                displayNameZH: (object["display_name_zh"] as? String)?.nilIfBlank
+                    ?? (object["display_name"] as? String)?.nilIfBlank,
+                description: (object["description"] as? String)?.nilIfBlank
+                    ?? (object["description_zh"] as? String)?.nilIfBlank,
+                descriptionZH: (object["description_zh"] as? String)?.nilIfBlank
+                    ?? (object["description"] as? String)?.nilIfBlank,
                 prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+    }
+
+    private func parseKeywordGroups(_ rawGroups: [String: Any]?) -> (groups: [KeywordGroup], warnings: [String]) {
+        guard let rawGroups else { return ([], []) }
+        var warnings: [String] = []
+        var invalidGroupSeen = false
+        var invalidKeywordSeen = false
+        var groupLimitSeen = false
+
+        let groups = rawGroups.compactMap { id, value -> KeywordGroup? in
+            guard KeywordGroupValidator.isValidID(id),
+                  let object = value as? [String: Any],
+                  let rawKeywords = object["keywords"] as? [Any] else {
+                invalidGroupSeen = true
+                return nil
+            }
+
+            var keywords: [String] = []
+            for rawKeyword in rawKeywords {
+                guard let keyword = rawKeyword as? String,
+                      let sanitized = KeywordGroupValidator.sanitizedKeyword(keyword) else {
+                    invalidKeywordSeen = true
+                    continue
+                }
+                if !keywords.contains(sanitized) {
+                    keywords.append(sanitized)
+                }
+            }
+            guard !keywords.isEmpty else {
+                invalidKeywordSeen = true
+                return nil
+            }
+            if keywords.count > KeywordGroupValidator.maxKeywordsPerGroup {
+                groupLimitSeen = true
+                keywords = Array(keywords.prefix(KeywordGroupValidator.maxKeywordsPerGroup))
+            }
+
+            let displayName = (object["display_name"] as? String)?.nilIfBlank
+            let displayNameZH = (object["display_name_zh"] as? String)?.nilIfBlank
+            let description = (object["description"] as? String)?.nilIfBlank
+            let descriptionZH = (object["description_zh"] as? String)?.nilIfBlank
+            return KeywordGroup(
+                id: id,
+                displayName: displayName ?? displayNameZH,
+                displayNameZH: displayNameZH ?? displayName,
+                description: description ?? descriptionZH,
+                descriptionZH: descriptionZH ?? description,
+                keywords: keywords
+            )
+        }.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+
+        if invalidGroupSeen {
+            warnings.append("Config warning: invalid keyword groups ignored")
+        }
+        if invalidKeywordSeen {
+            warnings.append("Config warning: invalid keywords ignored")
+        }
+        if groupLimitSeen {
+            warnings.append("Config warning: keyword group limit exceeded")
+        }
+        return (groups, warnings)
     }
 
     private func customPrompt(from object: [String: Any]) -> String {
@@ -655,6 +1295,112 @@ public struct ConfigLoader {
             return .defaultSettings
         }
         return ConfigLatencySettings(interval: ConfigLatencyInterval.safeSelection(seconds))
+    }
+
+    private func parsePreferences(_ object: [String: Any]?, selectedModel: AllowedSpeechModel) -> ConfigPreferences? {
+        guard let object,
+              let uiLanguage = UILanguage(rawValue: object["ui_language"] as? String ?? ""),
+              let styleRaw = (object["transcription_style"] as? String)?.nilIfBlank,
+              let triggerRaw = (object["trigger_key"] as? String)?.nilIfBlank,
+              let triggerKey = TriggerKey.allCandidates.first(where: { $0.identifier == triggerRaw }),
+              let minMilliseconds = object["min_recording_duration_ms"] as? Int,
+              let minDuration = MinRecordingDuration(rawValue: minMilliseconds),
+              let maxSeconds = object["max_recording_duration_seconds"] as? Int,
+              let maxDuration = MaxRecordingDuration(rawValue: maxSeconds),
+              let autoInsert = object["auto_insert"] as? Bool,
+              let launchAtLogin = object["launch_at_login"] as? Bool,
+              let hud = object["hud"] as? [String: Any],
+              let hudVisualRaw = hud["visual_style"] as? String,
+              let hudVisualStyle = HUDVisualStyle(rawValue: hudVisualRaw),
+              let messageSeconds = hud["message_duration_seconds"] as? Int,
+              let messageDuration = HUDMessageDuration(rawValue: messageSeconds),
+              let revealMilliseconds = hud["reveal_delay_ms"] as? Int,
+              let revealDelay = HUDRevealDelay(rawValue: revealMilliseconds) else {
+            return nil
+        }
+        let selection = TranscriptionStyleSelection(rawValue: styleRaw)
+        guard selection.builtInStyle != nil ||
+              (styleRaw.hasPrefix(TranscriptionStyleSelection.customPrefix) &&
+               CustomTranscriptionStyleValidator.isValidID(String(styleRaw.dropFirst(TranscriptionStyleSelection.customPrefix.count)))) else {
+            return nil
+        }
+        let keywordHintsEnabled = object["keyword_hints_enabled"] as? Bool ?? true
+        let enabledKeywordGroupIDs = (object["enabled_keyword_groups"] as? [String] ?? [])
+            .filter(KeywordGroupValidator.isValidID)
+        return ConfigPreferences(
+            selectedModel: selectedModel,
+            uiLanguage: uiLanguage,
+            transcriptionStyleSelection: selection,
+            keywordHintsEnabled: keywordHintsEnabled,
+            enabledKeywordGroupIDs: enabledKeywordGroupIDs,
+            triggerKey: triggerKey,
+            minRecordingDuration: minDuration,
+            maxRecordingDuration: maxDuration,
+            autoInsert: autoInsert,
+            launchAtLogin: launchAtLogin,
+            hudVisualStyle: hudVisualStyle,
+            hudMessageDuration: messageDuration,
+            hudRevealDelay: revealDelay
+        )
+    }
+
+    private func validationIssues(for object: [String: Any]) -> [String] {
+        var issues: [String] = []
+        guard let defaultModelRaw = object["default_model"] as? String,
+              AllowedSpeechModel(rawValue: defaultModelRaw) != nil else {
+            issues.append("default_model")
+            return issues
+        }
+        let defaultModel = AllowedSpeechModel.safeSelection(defaultModelRaw)
+        let sources = parseSources(object: object)
+        if sources.isEmpty {
+            issues.append("sources")
+        }
+        if let rawSources = object["sources"] as? [String: Any] {
+            for (id, value) in rawSources {
+                guard ConfigSourceNameValidator.isValid(id),
+                      let sourceObject = value as? [String: Any],
+                      MimoConfig.normalizedBaseURL(from: sourceObject["base_url"] as? String) != nil,
+                      (sourceObject["api_key"] == nil || sourceObject["api_key"] is String) else {
+                    issues.append("sources")
+                    return issues
+                }
+            }
+        }
+        guard let activeID = (object["active_source"] as? String)?.nilIfBlank,
+              activeID == MimoConfig.autoSourceID || ConfigSourceNameValidator.isValid(activeID) else {
+            issues.append("active_source")
+            return issues
+        }
+        if activeID != MimoConfig.autoSourceID, !sources.contains(where: { $0.id == activeID }) {
+            issues.append("active_source_missing")
+        }
+        guard let latency = object["latency"] as? [String: Any],
+              latency["enabled"] is Bool else {
+            issues.append("latency")
+            return issues
+        }
+        if !(latency["interval_seconds"] is NSNull) {
+            guard let seconds = latency["interval_seconds"] as? Int,
+                  ConfigLatencyInterval(rawValue: seconds) != nil else {
+                issues.append("latency_interval")
+                return issues
+            }
+        }
+        if parsePreferences(object["preferences"] as? [String: Any], selectedModel: defaultModel) == nil {
+            issues.append("preferences")
+        }
+        return issues
+    }
+
+    private func preferredWriteLanguage(fallback: UILanguage) -> UILanguage {
+        guard let object = readJSONObject(url: configFileURL),
+              let defaultModelRaw = object["default_model"] as? String,
+              let defaultModel = AllowedSpeechModel(rawValue: defaultModelRaw),
+              let preferences = parsePreferences(object["preferences"] as? [String: Any], selectedModel: defaultModel) else {
+            return fallback
+        }
+        return preferences.uiLanguage
     }
 }
 

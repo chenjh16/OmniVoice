@@ -15,8 +15,8 @@ struct HUDAndActionPanelTests {
     }
     @Test
     func hudSurfaceResolverUsesNativeGlassOnlyWhenAvailable() {
-        #expect(HUDSurfaceResolver.resolve(preference: .automatic, operatingSystemMajorVersion: 26, nativeGlassClassAvailable: true) == .darkCapsule)
-        #expect(HUDSurfaceResolver.resolve(preference: .automatic, operatingSystemMajorVersion: 15, nativeGlassClassAvailable: true) == .darkCapsule)
+        #expect(HUDSurfaceResolver.resolve(preference: .automatic, systemAppearance: .dark, operatingSystemMajorVersion: 26, nativeGlassClassAvailable: true) == .darkCapsule)
+        #expect(HUDSurfaceResolver.resolve(preference: .automatic, systemAppearance: .light, operatingSystemMajorVersion: 15, nativeGlassClassAvailable: true) == .lightCapsule)
         #expect(HUDVisualStyle.safeSelection("glass") == .lightCapsule)
         #expect(HUDSurfaceResolver.resolve(preference: .lightCapsule, operatingSystemMajorVersion: 15, nativeGlassClassAvailable: true) == .lightCapsule)
         #expect(HUDSurfaceResolver.resolve(preference: .liquidGlass, operatingSystemMajorVersion: 15, nativeGlassClassAvailable: true) == .lightCapsule)

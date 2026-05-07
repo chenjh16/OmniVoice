@@ -84,6 +84,17 @@ public enum TranscriptionInstructionBuilder {
     }
 
     public static func instruction(
+        descriptor: TranscriptionStyleDescriptor,
+        keywordHints: KeywordHintsContext
+    ) -> String {
+        let base = instruction(descriptor: descriptor)
+        guard let hints = keywordHintsSection(keywordHints) else {
+            return base
+        }
+        return base + "\n\n" + hints
+    }
+
+    public static func instruction(
         selection: TranscriptionStyleSelection,
         customStyles: [CustomTranscriptionStyle]
     ) -> String {
@@ -107,5 +118,51 @@ public enum TranscriptionInstructionBuilder {
         - 保留技术词、产品名、文件名、命令、路径、变量名、人名和专有名词。
         - 只输出最终文本，不要解释、不要候选项、不要引号、不要 Markdown 代码块。
         """
+    }
+
+    private static func keywordHintsSection(_ context: KeywordHintsContext) -> String? {
+        let lines = keywordGroupLines(context)
+        guard !lines.isEmpty else { return nil }
+        return """
+        关键词提示（仅用于语音识别消歧）：
+        下面这些词可能出现在音频里，尤其是专有名词、产品名、命令、文件名或领域术语。请在听到相近发音且上下文合理时优先参考它们。
+        重要约束：
+        - 不要因为列表中有某个词就强行输出它。
+        - 如果音频和上下文不支持某个关键词，不要插入该关键词。
+        - 保留关键词原有大小写、数字、连字符、点号、下划线和路径符号。
+        - 关键词只用于识别纠错，不改变用户原本的意思、语气或事实。
+
+        已启用关键词组：
+        \(lines.joined(separator: "\n"))
+        """
+    }
+
+    private static func keywordGroupLines(_ context: KeywordHintsContext) -> [String] {
+        guard context.isEnabled else { return [] }
+        var totalCount = 0
+        var seen = Set<String>()
+        var output: [String] = []
+
+        for group in context.activeGroups {
+            guard totalCount < KeywordGroupValidator.maxTotalKeywords else { break }
+            var keywords: [String] = []
+            for keyword in group.keywords {
+                guard totalCount < KeywordGroupValidator.maxTotalKeywords,
+                      let sanitized = KeywordGroupValidator.sanitizedKeyword(keyword),
+                      !seen.contains(sanitized) else {
+                    continue
+                }
+                seen.insert(sanitized)
+                keywords.append(sanitized)
+                totalCount += 1
+                if keywords.count >= KeywordGroupValidator.maxKeywordsPerGroup {
+                    break
+                }
+            }
+            if !keywords.isEmpty {
+                output.append("- \(group.localizedName(in: .chinese))：\(keywords.joined(separator: "；"))")
+            }
+        }
+        return output
     }
 }

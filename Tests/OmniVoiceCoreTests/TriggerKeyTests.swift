@@ -118,6 +118,16 @@ struct TriggerKeyTests {
     }
     @Test
     func fnTriggerCancelsRecordingWhenCombinedWithAnotherKey() {
+        #expect(EventTapFnCombinationCancellation.cancelReason(
+            trigger: .fnGlobe,
+            type: .keyDown,
+            triggerPressed: true
+        ) == .triggerCombination)
+        #expect(EventTapFnCombinationCancellation.cancelReason(
+            trigger: .fnGlobe,
+            type: EventTapEventTypes.systemDefined,
+            triggerPressed: true
+        ) == .triggerCombination)
         #expect(EventTapFnCombinationCancellation.shouldCancel(
             trigger: .fnGlobe,
             type: .keyDown,
@@ -144,6 +154,26 @@ struct TriggerKeyTests {
             triggerPressed: true
         ))
     }
+
+    @Test
+    func escapeCancellationRequiresActiveCancellationMode() {
+        #expect(EventTapEscapeCancellation.cancelReason(
+            type: .keyDown,
+            keyCode: FnEscapeRescueDetector.escapeKeyCode,
+            cancellationActive: true
+        ) == .escapeKey)
+        #expect(EventTapEscapeCancellation.cancelReason(
+            type: .keyDown,
+            keyCode: FnEscapeRescueDetector.escapeKeyCode,
+            cancellationActive: false
+        ) == nil)
+        #expect(EventTapEscapeCancellation.cancelReason(
+            type: .keyUp,
+            keyCode: FnEscapeRescueDetector.escapeKeyCode,
+            cancellationActive: true
+        ) == nil)
+    }
+
     @Test
     func fnEscapeTriggersEmergencyRescue() {
         #expect(FnEscapeRescueDetector.shouldRescue(

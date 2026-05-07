@@ -1,42 +1,113 @@
 {
   // OmniVoice reads this file at ~/.config/omnivoice/config.jsonc.
-  // Keep file permissions at 0600 when api_key is filled.
-  // Use "auto" to let OmniVoice choose the fastest reachable source
-  // whose /v1/models response contains a supported speech model.
+  // Keep this file at permission 0600 when an API key is filled in.
+  // API source ID. Use "auto" to let OmniVoice choose the fastest source that supports speech models.
   "active_source": "auto",
+  // Default speech transcription model. Only mimo-v2-omni and mimo-v2.5 are supported.
   "default_model": "mimo-v2-omni",
+  // API sources. Each key is a source ID using letters, numbers, dots, underscores, or dashes.
   "sources": {
-    "sgp": {
+    // Source config1.
+    "config1": {
+      // Base URL may include /v1; OmniVoice normalizes it automatically.
       "base_url": "https://token-plan-sgp.xiaomimimo.com",
-      "api_key": ""
-    },
-    "cn": {
-      "base_url": "https://token-plan-cn.xiaomimimo.com",
+      // API key for this source. Menus and logs only show redacted status.
       "api_key": ""
     }
   },
+  // Latency settings. Only /v1/models is called; no voice audio is sent.
   "latency": {
-    // Set enabled to false to disable background latency checks.
+    // Whether background latency checks are enabled.
     "enabled": true,
-    // Supported values: 30, 60, 120, 300, 900, 1800, 3600.
-    // Use null for startup-only checks.
+    // Latency interval in seconds. Supported: 30, 60, 120, 300, 900, 1800, 3600; null means startup only.
     "interval_seconds": 1800
   },
+  // User preferences exposed in the menu. OmniVoice syncs menu state from these values.
+  "preferences": {
+    // UI language; also controls the language of comments in this file.
+    "ui_language": "en",
+    // Default transcription style. Use concise, verbatim, codeFaithful, rewrite, or custom:<style ID>.
+    "transcription_style": "concise",
+    // Whether keyword hints are enabled. When off, no keywords are injected into the transcription prompt.
+    "keyword_hints_enabled": true,
+    // Enabled keyword group IDs. You can multi-select them in the menu or edit this list directly.
+    "enabled_keyword_groups": ["omnivoice_terms", "technical_terms"],
+    // Recording trigger key. Default is fn-globe; menu-listed F1-F12, modifier, and Caps Lock IDs are also supported.
+    "trigger_key": "fn-globe",
+    // Minimum recording duration in milliseconds.
+    "min_recording_duration_ms": 500,
+    // Maximum recording duration in seconds.
+    "max_recording_duration_seconds": 60,
+    // Whether final text is auto-inserted when the focused field is safe.
+    "auto_insert": true,
+    // Whether to launch at login. Menu changes also sync the system Login Item.
+    "launch_at_login": false,
+    // HUD and short-message display settings.
+    "hud": {
+      // HUD visual style: automatic follows the system light/dark appearance; fixed darkCapsule and lightCapsule are also available; liquidGlass is available on macOS 26+.
+      "visual_style": "automatic",
+      // How many seconds short status or warning messages stay visible.
+      "message_duration_seconds": 3,
+      // Delay before the listening HUD appears after pressing the trigger, in milliseconds. Recording starts immediately.
+      "reveal_delay_ms": 200
+    }
+  },
+  // Custom transcription styles shown in the Style menu and result-panel style switcher.
   "custom_styles": {
-    // Custom transcription styles appear in the Style menu and in the result panel style switcher.
-    // Style IDs may use letters, numbers, dots, underscores, and dashes. Do not reuse a built-in style ID.
+    // Custom style meeting_notes.
     "meeting_notes": {
+      // English display name.
       "display_name": "Meeting Notes",
+      // Chinese display name.
       "display_name_zh": "会议纪要",
+      // English description, used as a menu tooltip.
       "description": "Turn speech into concise meeting notes.",
+      // Chinese description, used as a menu tooltip.
       "description_zh": "把口述整理成简洁会议纪要。",
-      // Most users only need to edit these prompt lines: say what tone and format you want,
-      // and name what must not be invented.
+      // Transcription prompt. State tone, format, and constraints; do not ask for facts the user did not say.
       "prompt_lines": [
         "Turn this audio into concise meeting notes.",
         "Preserve explicitly spoken decisions, todos, times, names, project names, and technical terms.",
         "Use a short line-by-line list when there are multiple points.",
         "Do not add facts, conclusions, owners, or deadlines that the user did not say."
+      ]
+    }
+  },
+  // Keyword groups are injected as recognition hints for proper nouns, product names, commands, paths, and domain terms.
+  "keyword_groups": {
+    // Keyword group omnivoice_terms.
+    "omnivoice_terms": {
+      // Display name. One language is enough; the other UI language falls back to the name that exists.
+      "display_name": "OmniVoice Terms",
+      // Description used as the menu tooltip; one language is enough.
+      "description": "Project and API vocabulary.",
+      // Keyword list. Up to 200 per group and 500 injected in total; do not include newlines or control characters.
+      "keywords": [
+        "OmniVoice",
+        "MiMo",
+        "mimo-v2-omni",
+        "config.jsonc",
+        "ActionPanel",
+        "HUD",
+        "Panel"
+      ]
+    },
+    // Keyword group technical_terms.
+    "technical_terms": {
+      // Display name. One language is enough; the other UI language falls back to the name that exists.
+      "display_name": "Technical Terms",
+      // Description used as the menu tooltip; one language is enough.
+      "description": "Code, command, and macOS vocabulary.",
+      // Keyword list. Up to 200 per group and 500 injected in total; do not include newlines or control characters.
+      "keywords": [
+        "Swift",
+        "AppKit",
+        "macOS",
+        "JSONC",
+        "API",
+        "make run",
+        "Cmd+V",
+        "Fn"
       ]
     }
   }

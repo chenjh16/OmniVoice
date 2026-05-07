@@ -167,9 +167,27 @@ public enum PermissionDriftPlanner {
     }
 }
 
+public struct SingleInstanceResolution: Equatable, Sendable {
+    public let observedCount: Int
+    public let remainingCount: Int
+
+    public init(observedCount: Int, remainingCount: Int) {
+        self.observedCount = max(0, observedCount)
+        self.remainingCount = max(0, remainingCount)
+    }
+
+    public var hasConflict: Bool {
+        remainingCount > 0
+    }
+}
+
 public enum SingleInstanceLaunchPlanner {
     public static func shouldAllowListening(otherRunningInstanceCount: Int) -> Bool {
         otherRunningInstanceCount == 0
+    }
+
+    public static func shouldAllowListening(resolution: SingleInstanceResolution) -> Bool {
+        !resolution.hasConflict
     }
 }
 

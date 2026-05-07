@@ -237,7 +237,15 @@ public enum InjectionE2ECommand {
             selection: selection,
             customStyles: config.customStyles
         )
-        let instruction = TranscriptionInstructionBuilder.instruction(descriptor: descriptor)
+        let enabledIDs = Set(config.preferences.enabledKeywordGroupIDs)
+        let keywordHints = KeywordHintsContext(
+            isEnabled: config.preferences.keywordHintsEnabled,
+            groups: config.keywordGroups.filter { enabledIDs.contains($0.id) }
+        )
+        let instruction = TranscriptionInstructionBuilder.instruction(
+            descriptor: descriptor,
+            keywordHints: keywordHints
+        )
         let client = MimoAPIClient(config: config)
         return try await client.transcribe(
             wavData: wavData,

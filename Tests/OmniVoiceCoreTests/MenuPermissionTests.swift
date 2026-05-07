@@ -36,6 +36,10 @@ struct MenuPermissionTests {
         #expect(UIStrings(language: .english).latencyIntervalTitle(.minutes30) == "Latency Check: Every 30 minutes")
         #expect(UIStrings(language: .chinese).latencyIntervalLabel(.seconds30) == "每 30 秒")
         #expect(ConfigLatencyInterval.allCases.map(\.rawValue) == [30, 60, 120, 300, 900, 1800, 3600, 0, -1])
+        #expect(UIStrings(language: .chinese).displayHints == "提示与显示")
+        #expect(UIStrings(language: .english).displayHints == "Display & Hints")
+        #expect(UIStrings(language: .chinese).hudRevealDelayTitle(.milliseconds200) == "HUD 弹出延迟：200ms · 快速（推荐）")
+        #expect(UIStrings(language: .english).hudRevealDelayTitle(.milliseconds500) == "HUD Reveal Delay: 500ms · Most Conservative")
         #expect(UIStrings(language: .chinese).configurationTitle(MimoConfig(apiKey: nil, source: .missing)).contains("缺少 API Key"))
         #expect(UIStrings(language: .chinese).apiKeyStatus(MimoConfig(apiKey: nil)) == "缺失")
         #expect(UIStrings(language: .chinese).configWarning("Config warning: config.jsonc could not be read").contains("无法读取"))
@@ -44,6 +48,12 @@ struct MenuPermissionTests {
         #expect(UIStrings(language: .chinese).reenable == "重新启用")
         #expect(UIStrings(language: .chinese).openConfigFile == "打开 config 文件")
         #expect(UIStrings(language: .english).openConfigFile == "Open config file")
+        #expect(UIStrings(language: .chinese).keywordHintsTitle(enabled: true, selectedCount: 2) == "关键词：2 组")
+        #expect(UIStrings(language: .english).keywordHintsTitle(enabled: false, selectedCount: 2) == "Keyword Hints: off")
+        #expect(UIStrings(language: .chinese).enableKeywordHints == "启用关键词提示")
+        #expect(UIStrings(language: .english).editKeywords == "Open config file to edit keywords")
+        let keywordGroup = KeywordGroup(id: "terms", displayNameZH: "术语", keywords: ["OmniVoice"])
+        #expect(UIStrings(language: .english).keywordGroupMenuItem(keywordGroup) == "术语")
         #expect(UIStrings(language: .chinese).restart == "重启 OmniVoice")
         #expect(UIStrings(language: .english).quit == "Quit OmniVoice")
         #expect(UIStrings(language: .chinese).recordingDurationTitle(min: .milliseconds800, max: .seconds60) == "录音时长：800ms–60s")
@@ -74,7 +84,10 @@ struct MenuPermissionTests {
             UIStrings(language: .chinese).tooltip(.styleVerbatim),
             UIStrings(language: .chinese).tooltip(.styleTechnical),
             UIStrings(language: .chinese).tooltip(.styleRewrite),
-            UIStrings(language: .chinese).tooltip(.customStyles)
+            UIStrings(language: .chinese).tooltip(.customStyles),
+            UIStrings(language: .chinese).tooltip(.keywordHints),
+            UIStrings(language: .chinese).tooltip(.displayHints),
+            UIStrings(language: .chinese).tooltip(.hudRevealDelay)
         ].joined(separator: "\n")
         #expect(!userFacingTooltips.localizedCaseInsensitiveContains("event tap"))
         #expect(!userFacingTooltips.localizedCaseInsensitiveContains("AX"))
@@ -233,6 +246,18 @@ struct MenuPermissionTests {
         #expect(!SingleInstanceLaunchPlanner.shouldAllowListening(otherRunningInstanceCount: 1))
         #expect(!SingleInstanceLaunchPlanner.shouldAllowListening(otherRunningInstanceCount: 2))
     }
+
+    @Test
+    func singleInstancePlannerAllowsListeningAfterOldInstanceExits() {
+        let resolved = SingleInstanceResolution(observedCount: 1, remainingCount: 0)
+        let blocked = SingleInstanceResolution(observedCount: 1, remainingCount: 1)
+
+        #expect(SingleInstanceLaunchPlanner.shouldAllowListening(resolution: resolved))
+        #expect(!SingleInstanceLaunchPlanner.shouldAllowListening(resolution: blocked))
+        #expect(!resolved.hasConflict)
+        #expect(blocked.hasConflict)
+    }
+
     @Test
     func tapDisabledRecoveryRequiresReadyPermissionsAndRunningState() {
         let ready = PermissionSnapshot(

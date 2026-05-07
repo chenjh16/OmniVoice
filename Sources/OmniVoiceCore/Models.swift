@@ -149,8 +149,92 @@ public struct CustomTranscriptionStyle: Equatable, Sendable {
         case .chinese:
             return descriptionZH ?? description
         case .english:
-            return description
+            return description ?? descriptionZH
         }
+    }
+}
+
+public struct KeywordGroup: Equatable, Sendable {
+    public let id: String
+    public let displayName: String?
+    public let displayNameZH: String?
+    public let description: String?
+    public let descriptionZH: String?
+    public let keywords: [String]
+
+    public init(
+        id: String,
+        displayName: String? = nil,
+        displayNameZH: String? = nil,
+        description: String? = nil,
+        descriptionZH: String? = nil,
+        keywords: [String]
+    ) {
+        self.id = id
+        self.displayName = displayName?.nilIfBlank
+        self.displayNameZH = displayNameZH?.nilIfBlank
+        self.description = description?.nilIfBlank
+        self.descriptionZH = descriptionZH?.nilIfBlank
+        self.keywords = keywords
+    }
+
+    public func localizedName(in uiLanguage: UILanguage) -> String {
+        switch uiLanguage {
+        case .chinese:
+            return displayNameZH ?? displayName ?? id
+        case .english:
+            return displayName ?? displayNameZH ?? id
+        }
+    }
+
+    public func localizedDescription(in uiLanguage: UILanguage) -> String? {
+        switch uiLanguage {
+        case .chinese:
+            return descriptionZH ?? description
+        case .english:
+            return description ?? descriptionZH
+        }
+    }
+}
+
+public struct KeywordHintsContext: Equatable, Sendable {
+    public let isEnabled: Bool
+    public let groups: [KeywordGroup]
+
+    public init(isEnabled: Bool = true, groups: [KeywordGroup] = []) {
+        self.isEnabled = isEnabled
+        self.groups = groups
+    }
+
+    public var activeGroups: [KeywordGroup] {
+        guard isEnabled else { return [] }
+        return groups.filter { !$0.keywords.isEmpty }
+    }
+}
+
+public enum KeywordGroupValidator {
+    public static let maxKeywordsPerGroup = 200
+    public static let maxTotalKeywords = 500
+
+    public static func isValidID(_ value: String) -> Bool {
+        guard let trimmed = value.nilIfBlank,
+              trimmed.count <= 48,
+              trimmed != "auto" else {
+            return false
+        }
+        return trimmed.range(
+            of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    public static func sanitizedKeyword(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let containsRejectedScalar = trimmed.unicodeScalars.contains { scalar in
+            CharacterSet.newlines.contains(scalar) || CharacterSet.controlCharacters.contains(scalar)
+        }
+        return containsRejectedScalar ? nil : trimmed
     }
 }
 
@@ -589,6 +673,45 @@ public enum HUDMessageDuration: Int, CaseIterable, Codable, Sendable {
     }
 }
 
+public enum HUDRevealDelay: Int, CaseIterable, Codable, Sendable {
+    case milliseconds100 = 100
+    case milliseconds200 = 200
+    case milliseconds300 = 300
+    case milliseconds400 = 400
+    case milliseconds500 = 500
+
+    public static let defaultDelay: HUDRevealDelay = .milliseconds200
+
+    public var seconds: TimeInterval {
+        TimeInterval(rawValue) / 1_000
+    }
+
+    public func displayName(in uiLanguage: UILanguage) -> String {
+        switch uiLanguage {
+        case .chinese:
+            switch self {
+            case .milliseconds100: return "100ms · 极快"
+            case .milliseconds200: return "200ms · 快速（推荐）"
+            case .milliseconds300: return "300ms · 平衡"
+            case .milliseconds400: return "400ms · 稳妥"
+            case .milliseconds500: return "500ms · 最稳"
+            }
+        case .english:
+            switch self {
+            case .milliseconds100: return "100ms · Very Fast"
+            case .milliseconds200: return "200ms · Fast (Recommended)"
+            case .milliseconds300: return "300ms · Balanced"
+            case .milliseconds400: return "400ms · Conservative"
+            case .milliseconds500: return "500ms · Most Conservative"
+            }
+        }
+    }
+
+    public static func safeSelection(_ rawValue: Int) -> HUDRevealDelay {
+        HUDRevealDelay(rawValue: rawValue) ?? .defaultDelay
+    }
+}
+
 public enum HUDResolvedSurface: Equatable, Sendable {
     case darkCapsule
     case lightCapsule
@@ -685,6 +808,7 @@ public enum HUDPaletteResolver {
 public enum HUDSurfaceResolver {
     public static func resolve(
         preference: HUDVisualStyle,
+        systemAppearance: GlassBackgroundAppearance = .dark,
         operatingSystemMajorVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
         nativeGlassClassAvailable: Bool = NSClassFromString("NSGlassEffectView") != nil
     ) -> HUDResolvedSurface {
@@ -699,7 +823,7 @@ public enum HUDSurfaceResolver {
                 nativeGlassClassAvailable: nativeGlassClassAvailable
             ) ? .nativeGlass : .lightCapsule
         case .automatic:
-            return .darkCapsule
+            return systemAppearance == .dark ? .darkCapsule : .lightCapsule
         }
     }
 }
@@ -771,5 +895,22 @@ public enum RecordingValidator {
             return RecordingValidationResult(status: .tooQuiet, durationSeconds: durationSeconds, overallRMS: overallRMS)
         }
         return RecordingValidationResult(status: .valid, durationSeconds: durationSeconds, overallRMS: overallRMS)
+    }
+}
+
+public enum ListeningHUDRevealPlanner {
+    public static let defaultDelaySeconds: TimeInterval = HUDRevealDelay.defaultDelay.seconds
+
+    public static func shouldReveal(isRecording: Bool, cancelled: Bool) -> Bool {
+        isRecording && !cancelled
+    }
+}
+
+public enum RecordingStopFailurePresentationPlanner {
+    public static func shouldShowHUD(
+        validationStatus: RecordingValidationResult.Status?,
+        listeningHUDWasShown: Bool
+    ) -> Bool {
+        !(validationStatus == .tooShort && !listeningHUDWasShown)
     }
 }

@@ -5,13 +5,18 @@ import Foundation
 public enum EventTapSignal: Equatable, Sendable {
     case triggerDown
     case triggerUp
-    case cancel
+    case cancel(EventTapCancellationReason)
     case tapDisabled
     case tapReenabled
     case tapFailed
     case triggerAckTimeout
     case triggerWatchdogReset
     case emergencyRescue
+}
+
+public enum EventTapCancellationReason: Equatable, Sendable {
+    case escapeKey
+    case triggerCombination
 }
 
 public enum EventTapTriggerAction: Equatable, Sendable {
@@ -72,13 +77,21 @@ public enum EventTapEventTypes {
 }
 
 public enum EventTapFnCombinationCancellation {
+    public static func cancelReason(
+        trigger: TriggerKey,
+        type: CGEventType,
+        triggerPressed: Bool
+    ) -> EventTapCancellationReason? {
+        guard trigger.kind == .fnGlobe, triggerPressed else { return nil }
+        return type == .keyDown || type == EventTapEventTypes.systemDefined ? .triggerCombination : nil
+    }
+
     public static func shouldCancel(
         trigger: TriggerKey,
         type: CGEventType,
         triggerPressed: Bool
     ) -> Bool {
-        guard trigger.kind == .fnGlobe, triggerPressed else { return false }
-        return type == .keyDown || type == EventTapEventTypes.systemDefined
+        cancelReason(trigger: trigger, type: type, triggerPressed: triggerPressed) != nil
     }
 }
 
@@ -93,6 +106,21 @@ public enum FnEscapeRescueDetector {
         type == .keyDown &&
         keyCode == escapeKeyCode &&
         flags.contains(.maskSecondaryFn)
+    }
+}
+
+public enum EventTapEscapeCancellation {
+    public static func cancelReason(
+        type: CGEventType,
+        keyCode: Int,
+        cancellationActive: Bool
+    ) -> EventTapCancellationReason? {
+        guard cancellationActive,
+              type == .keyDown,
+              keyCode == FnEscapeRescueDetector.escapeKeyCode else {
+            return nil
+        }
+        return .escapeKey
     }
 }
 
@@ -249,8 +277,12 @@ public final class EventTapController: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
-        if type == .keyDown, keyCode == 53, lock.withLock({ cancellationActive }) {
-            post(.cancel)
+        if let cancelReason = EventTapEscapeCancellation.cancelReason(
+            type: type,
+            keyCode: keyCode,
+            cancellationActive: lock.withLock({ cancellationActive })
+        ) {
+            post(.cancel(cancelReason))
             return nil
         }
 
@@ -260,13 +292,13 @@ public final class EventTapController: @unchecked Sendable {
         guard !passThroughOnly, suppressionEnabled else {
             return Unmanaged.passUnretained(event)
         }
-        if EventTapFnCombinationCancellation.shouldCancel(
+        if let cancelReason = EventTapFnCombinationCancellation.cancelReason(
             trigger: currentTrigger,
             type: type,
             triggerPressed: currentlyPressed
         ) {
             clearPressedTriggerState()
-            post(.cancel)
+            post(.cancel(cancelReason))
             return Unmanaged.passUnretained(event)
         }
 

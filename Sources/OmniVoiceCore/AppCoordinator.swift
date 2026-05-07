@@ -41,9 +41,12 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     private let actionPanel = ActionPanelController()
     private let textInjector = TextInjector()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let configWatcher: ConfigFileWatcher
 
     private var state: AppState = .idle
     private var maxRecordingTimer: Timer?
+    private var listeningHUDRevealTimer: Timer?
+    private var listeningHUDShownForCurrentRecording = false
     private var transcriptionTask: Task<Void, Never>?
     private var recordingFocus: FocusSnapshot?
     private var recordingStartDate: Date?
@@ -72,6 +75,10 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     private var automationGUIFrameTimer: Timer?
     private var automationGUIFrameIndex = 0
     private var automationPreviousUILanguage: UILanguage?
+    private var pendingConfigHotReload = false
+    private var lastInvalidConfigFingerprint: String?
+    private var lastConfigHotReloadMessage: String?
+    private var ignoreConfigFileChangesUntil: Date?
 
     private var strings: UIStrings {
         UIStrings(language: settings.uiLanguage)
@@ -84,6 +91,16 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         )
     }
 
+    private var currentKeywordHintsContext: KeywordHintsContext {
+        let enabledIDs = Set(settings.enabledKeywordGroupIDs)
+        let groups = config.keywordGroups.filter { enabledIDs.contains($0.id) }
+        return KeywordHintsContext(isEnabled: settings.keywordHintsEnabled, groups: groups)
+    }
+
+    private var selectedKeywordGroupCount: Int {
+        currentKeywordHintsContext.activeGroups.count
+    }
+
     private var warningDuration: TimeInterval {
         settings.hudMessageDuration.seconds
     }
@@ -93,13 +110,15 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         configLoader: ConfigLoader = ConfigLoader(),
         automationEventSink: (any AutomationEventSink)? = nil
     ) {
-        let loaded = configLoader.load()
+        let loaded = configLoader.ensureValidConfig(uiLanguage: SettingsStore.shared.uiLanguage)
         config = loaded
         client = MimoAPIClient(config: loaded.resolvingSource(using: [:]))
         self.recordingSource = recordingSource
         self.configLoader = configLoader
+        self.configWatcher = ConfigFileWatcher(fileURL: configLoader.configFileURL)
         self.automationEventSink = automationEventSink
         super.init()
+        settings.applyConfigPreferences(loaded.preferences)
         client = makeClient(config: loaded)
         self.recordingSource.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
@@ -119,6 +138,11 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         textInjector.onDiagnostic = { [weak self] diagnostic in
             self?.recordDiagnostic(diagnostic)
         }
+        configWatcher.onChange = { [weak self] in
+            DispatchQueue.main.async {
+                self?.handleConfigFileChanged()
+            }
+        }
     }
 
     private func makeClient(config: MimoConfig) -> any TranscriptionClient {
@@ -130,7 +154,54 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     }
 
     private func loadConfig() -> MimoConfig {
-        configLoader.load()
+        configLoader.ensureValidConfig(uiLanguage: settings.uiLanguage)
+    }
+
+    private func applyLoadedConfigPreferences(_ loaded: MimoConfig, syncLaunchAtLogin: Bool) {
+        settings.applyConfigPreferences(loaded.preferences)
+        normalizeHUDStyleAvailability()
+        hud.setVisualStyle(settings.hudVisualStyle)
+        actionPanel.setVisualStyle(settings.hudVisualStyle)
+        eventTap.update(triggerKey: settings.triggerKey)
+        eventTap.updateWatchdogTimeout(seconds: TimeInterval(settings.maxRecordingDuration.rawValue + 5))
+        if syncLaunchAtLogin {
+            syncLaunchAtLoginPreference(loaded.preferences.launchAtLogin, showWarningHUD: false)
+        }
+        if settings.listeningEnabled, !globalStopActive {
+            tapStatus = eventTap.isRunning ? strings.listeningWithTrigger(settings.triggerKey) : tapStatus
+        }
+    }
+
+    @discardableResult
+    private func persistCurrentPreferences() -> Bool {
+        let preferences = settings.configPreferences(
+            launchAtLogin: LaunchAtLoginController.status() == .enabled
+        )
+        markInternalConfigWrite()
+        guard configLoader.savePreferences(preferences) else {
+            hud.showWarningStatus(strings.operationFailed, duration: warningDuration)
+            return false
+        }
+        config = loadConfig()
+        client = makeClient(config: config)
+        return true
+    }
+
+    private func syncLaunchAtLoginPreference(_ enabled: Bool, showWarningHUD: Bool) {
+        let isEnabled = LaunchAtLoginController.status() == .enabled
+        guard isEnabled != enabled else {
+            lastLaunchAtLoginError = nil
+            return
+        }
+        do {
+            try LaunchAtLoginController.setEnabled(enabled)
+            lastLaunchAtLoginError = nil
+        } catch {
+            lastLaunchAtLoginError = sanitizedMessage(for: error)
+            if showWarningHUD {
+                hud.showWarningStatus(lastLaunchAtLoginError ?? strings.operationFailed, duration: warningDuration)
+            }
+        }
     }
 
     private func diagnosticRuntimeDetails(_ details: [String: String] = [:]) -> [String: String] {
@@ -155,14 +226,36 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     }
 
     @discardableResult
-    private func requestOtherInstancesTerminate() -> Int {
+    private func resolveOtherInstancesBeforeListening() -> SingleInstanceResolution {
         let apps = otherRunningOmniVoiceApplications()
+        guard !apps.isEmpty else {
+            return SingleInstanceResolution(observedCount: 0, remainingCount: 0)
+        }
         apps.forEach { app in
             if !app.terminate() {
                 app.forceTerminate()
             }
         }
-        return apps.count
+        var remainingApps = waitForOtherInstancesToExit(timeout: 1.2)
+        if !remainingApps.isEmpty {
+            remainingApps.forEach { $0.forceTerminate() }
+            remainingApps = waitForOtherInstancesToExit(timeout: 0.4)
+        }
+        return SingleInstanceResolution(
+            observedCount: apps.count,
+            remainingCount: remainingApps.count
+        )
+    }
+
+    private func waitForOtherInstancesToExit(timeout: TimeInterval) -> [NSRunningApplication] {
+        let deadline = Date().addingTimeInterval(timeout)
+        var remainingApps = otherRunningOmniVoiceApplications()
+        while !remainingApps.isEmpty, Date() < deadline {
+            let nextCheck = Date().addingTimeInterval(0.05)
+            RunLoop.current.run(mode: .default, before: min(nextCheck, deadline))
+            remainingApps = otherRunningOmniVoiceApplications()
+        }
+        return remainingApps
     }
 
     private func updateEventTapTriggerSuppression() {
@@ -175,11 +268,12 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
 
     func start() {
         normalizeHUDStyleAvailability()
+        syncLaunchAtLoginPreference(config.preferences.launchAtLogin, showWarningHUD: false)
         let startupPermissionSnapshot = PermissionChecker.snapshot()
         lastPermissionSnapshot = startupPermissionSnapshot
-        let otherInstanceCount = requestOtherInstancesTerminate()
+        let singleInstanceResolution = resolveOtherInstancesBeforeListening()
         let hasOtherInstanceConflict = !SingleInstanceLaunchPlanner.shouldAllowListening(
-            otherRunningInstanceCount: otherInstanceCount
+            resolution: singleInstanceResolution
         )
         stopReason = settings.stopReason
         let migratedStopReason = PermissionLegacyStopReasonMigrationPlanner.inferredStopReason(
@@ -206,8 +300,17 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
                 stage: "other_instance_detected",
                 errorKind: "single_instance_conflict",
                 details: diagnosticRuntimeDetails([
-                    "other_instance_count": "\(otherInstanceCount)",
+                    "other_instances_observed": "\(singleInstanceResolution.observedCount)",
+                    "other_instances_remaining": "\(singleInstanceResolution.remainingCount)",
                     "listening_enabled": "false"
+                ])
+            )
+        } else if singleInstanceResolution.observedCount > 0 {
+            recordLocalDiagnostic(
+                stage: "other_instance_terminated",
+                details: diagnosticRuntimeDetails([
+                    "other_instances_observed": "\(singleInstanceResolution.observedCount)",
+                    "other_instances_remaining": "\(singleInstanceResolution.remainingCount)"
                 ])
             )
         } else if shouldStartStopped {
@@ -233,6 +336,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             enterPermissionBlockedStop(recordDiagnostic: false)
         }
         configureStatusItem()
+        configWatcher.start()
         hud.setVisualStyle(settings.hudVisualStyle)
         actionPanel.setVisualStyle(settings.hudVisualStyle)
         if hasOtherInstanceConflict {
@@ -256,8 +360,10 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
 
     func stop() {
         maxRecordingTimer?.invalidate()
+        resetListeningHUDRevealState()
         latencyTimer?.invalidate()
         latencyTimer = nil
+        configWatcher.stop()
         stopPermissionReadinessPolling()
         stopPermissionDriftMonitoring()
         transcriptionTask?.cancel()
@@ -342,6 +448,9 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         for warning in config.warnings {
             menu.addItem(disabledItem(strings.configWarning(warning)))
         }
+        if let lastConfigHotReloadMessage {
+            menu.addItem(disabledItem(lastConfigHotReloadMessage))
+        }
         menu.addItem(submenuItem(strings.configurationTitle(displayConfig), submenu: configurationMenu(), tooltip: strings.tooltip(.configuration)))
         menu.addItem(NSMenuItem.separator())
 
@@ -351,6 +460,11 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             MenuTitleFormatter.style(styleDescriptor, uiLanguage: settings.uiLanguage),
             submenu: styleMenu(),
             tooltip: tooltip(for: styleDescriptor)
+        ))
+        menu.addItem(submenuItem(
+            strings.keywordHintsTitle(enabled: settings.keywordHintsEnabled, selectedCount: selectedKeywordGroupCount),
+            submenu: keywordHintsMenu(),
+            tooltip: strings.tooltip(.keywordHints)
         ))
         menu.addItem(submenuItem(MenuTitleFormatter.trigger(settings.triggerKey, uiLanguage: settings.uiLanguage), submenu: triggerMenu()))
         menu.addItem(submenuItem(
@@ -371,8 +485,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         autoInsert.state = settings.autoInsert ? .on : .off
         autoInsert.toolTip = strings.tooltip(.autoInsert)
         menu.addItem(autoInsert)
-        menu.addItem(submenuItem(MenuTitleFormatter.hudStyle(settings.hudVisualStyle, uiLanguage: settings.uiLanguage), submenu: hudStyleMenu()))
-        menu.addItem(submenuItem(strings.hudMessageDurationTitle(settings.hudMessageDuration), submenu: hudMessageDurationMenu(), tooltip: strings.tooltip(.hudMessageDuration)))
+        menu.addItem(submenuItem(strings.displayHints, submenu: displayHintsMenu(), tooltip: strings.tooltip(.displayHints)))
         if let lastLaunchAtLoginError {
             menu.addItem(disabledItem(lastLaunchAtLoginError))
         }
@@ -465,6 +578,43 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         return menu
     }
 
+    private func keywordHintsMenu() -> NSMenu {
+        let selectedIDs = Set(settings.enabledKeywordGroupIDs)
+        let menu = NSMenu(title: strings.keywordHints)
+        let enableItem = item(
+            title: strings.enableKeywordHints,
+            action: #selector(toggleKeywordHints),
+            tooltip: strings.tooltip(.keywordHints)
+        )
+        enableItem.state = settings.keywordHintsEnabled ? .on : .off
+        menu.addItem(enableItem)
+        menu.addItem(NSMenuItem.separator())
+
+        if config.keywordGroups.isEmpty {
+            menu.addItem(disabledItem(strings.noKeywordGroups))
+        } else {
+            for group in config.keywordGroups {
+                let menuItem = item(
+                    title: strings.keywordGroupMenuItem(group),
+                    action: #selector(toggleKeywordGroup(_:)),
+                    tooltip: group.localizedDescription(in: settings.uiLanguage) ?? strings.tooltip(.keywordHints)
+                )
+                menuItem.representedObject = group.id
+                menuItem.state = selectedIDs.contains(group.id) ? .on : .off
+                menuItem.isEnabled = settings.keywordHintsEnabled
+                menu.addItem(menuItem)
+            }
+        }
+
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(item(
+            title: strings.editKeywords,
+            action: #selector(openConfigFile),
+            tooltip: strings.tooltip(.keywordHints)
+        ))
+        return menu
+    }
+
     private func triggerMenu() -> NSMenu {
         let menu = NSMenu(title: strings.triggerTitle(settings.triggerKey))
         let captureView = TriggerCaptureMenuView(
@@ -542,6 +692,36 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             menuItem.state = duration == settings.hudMessageDuration ? .on : .off
             menu.addItem(menuItem)
         }
+        return menu
+    }
+
+    private func hudRevealDelayMenu() -> NSMenu {
+        let menu = NSMenu(title: strings.hudRevealDelay)
+        for delay in HUDRevealDelay.allCases {
+            let menuItem = item(title: delay.displayName(in: settings.uiLanguage), action: #selector(selectHUDRevealDelay(_:)), tooltip: strings.tooltip(.hudRevealDelay))
+            menuItem.representedObject = delay.rawValue
+            menuItem.state = delay == settings.hudRevealDelay ? .on : .off
+            menu.addItem(menuItem)
+        }
+        return menu
+    }
+
+    private func displayHintsMenu() -> NSMenu {
+        let menu = NSMenu(title: strings.displayHints)
+        menu.addItem(submenuItem(
+            MenuTitleFormatter.hudStyle(settings.hudVisualStyle, uiLanguage: settings.uiLanguage),
+            submenu: hudStyleMenu()
+        ))
+        menu.addItem(submenuItem(
+            strings.hudMessageDurationTitle(settings.hudMessageDuration),
+            submenu: hudMessageDurationMenu(),
+            tooltip: strings.tooltip(.hudMessageDuration)
+        ))
+        menu.addItem(submenuItem(
+            strings.hudRevealDelayTitle(settings.hudRevealDelay),
+            submenu: hudRevealDelayMenu(),
+            tooltip: strings.tooltip(.hudRevealDelay)
+        ))
         return menu
     }
 
@@ -713,6 +893,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
 
     @objc private func toggleAutoInsert() {
         settings.autoInsert.toggle()
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
@@ -720,6 +901,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let model = AllowedSpeechModel(rawValue: raw) else { return }
         settings.selectedModel = model
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
@@ -727,15 +909,38 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let language = UILanguage(rawValue: raw) else { return }
         settings.uiLanguage = language
+        _ = persistCurrentPreferences()
         if settings.listeningEnabled {
             tapStatus = eventTap.isRunning ? strings.listeningWithTrigger(settings.triggerKey) : strings.listeningUnavailable()
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     @objc private func selectStyle(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String else { return }
         settings.transcriptionStyleSelection = TranscriptionStyleSelection(rawValue: raw)
+        _ = persistCurrentPreferences()
+        rebuildMenu()
+    }
+
+    @objc private func toggleKeywordHints() {
+        settings.keywordHintsEnabled.toggle()
+        _ = persistCurrentPreferences()
+        rebuildMenu()
+    }
+
+    @objc private func toggleKeywordGroup(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String,
+              config.keywordGroups.contains(where: { $0.id == id }) else { return }
+        var ids = settings.enabledKeywordGroupIDs
+        if ids.contains(id) {
+            ids.removeAll { $0 == id }
+        } else {
+            ids.append(id)
+        }
+        settings.enabledKeywordGroupIDs = ids.filter(KeywordGroupValidator.isValidID)
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
@@ -751,6 +956,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         if settings.listeningEnabled, !globalStopActive {
             startListening(showFailureHUD: true)
         }
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
@@ -825,12 +1031,14 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         guard let seconds = sender.representedObject as? Int else { return }
         settings.maxRecordingDuration = MaxRecordingDuration.safeSelection(seconds)
         eventTap.updateWatchdogTimeout(seconds: TimeInterval(settings.maxRecordingDuration.rawValue + 5))
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
     @objc private func selectMinDuration(_ sender: NSMenuItem) {
         guard let milliseconds = sender.representedObject as? Int else { return }
         settings.minRecordingDuration = MinRecordingDuration.safeSelection(milliseconds)
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
@@ -839,12 +1047,21 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         settings.hudVisualStyle = HUDVisualStyleAvailability.sanitizedSelection(HUDVisualStyle.safeSelection(raw))
         hud.setVisualStyle(settings.hudVisualStyle)
         actionPanel.setVisualStyle(settings.hudVisualStyle)
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
     @objc private func selectHUDMessageDuration(_ sender: NSMenuItem) {
         guard let seconds = sender.representedObject as? Int else { return }
         settings.hudMessageDuration = HUDMessageDuration.safeSelection(seconds)
+        _ = persistCurrentPreferences()
+        rebuildMenu()
+    }
+
+    @objc private func selectHUDRevealDelay(_ sender: NSMenuItem) {
+        guard let milliseconds = sender.representedObject as? Int else { return }
+        settings.hudRevealDelay = HUDRevealDelay.safeSelection(milliseconds)
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
@@ -857,21 +1074,104 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             lastLaunchAtLoginError = sanitizedMessage(for: error)
             hud.showWarningStatus(lastLaunchAtLoginError ?? strings.operationFailed, duration: warningDuration)
         }
+        _ = persistCurrentPreferences()
         rebuildMenu()
     }
 
     @objc private func reloadConfig() {
         config = loadConfig()
+        applyLoadedConfigPreferences(config, syncLaunchAtLogin: true)
         client = makeClient(config: config)
         lastTestConnectionResult = nil
+        lastConfigHotReloadMessage = nil
         scheduleLatencyChecks()
         hud.showTransientStatus(strings.configReloaded, duration: warningDuration)
         rebuildMenu()
     }
 
+    private func handleConfigFileChanged() {
+        if let ignoreUntil = ignoreConfigFileChangesUntil {
+            if Date() < ignoreUntil {
+                return
+            }
+            ignoreConfigFileChangesUntil = nil
+        }
+        guard state == .idle else {
+            pendingConfigHotReload = true
+            return
+        }
+        applyConfigHotReload()
+    }
+
+    private func markInternalConfigWrite() {
+        ignoreConfigFileChangesUntil = Date().addingTimeInterval(2)
+    }
+
+    private func applyPendingConfigHotReloadIfNeeded() {
+        guard pendingConfigHotReload, state == .idle else { return }
+        pendingConfigHotReload = false
+        applyConfigHotReload()
+    }
+
+    private func applyConfigHotReload() {
+        switch configLoader.loadValidConfigWithoutRepair() {
+        case .valid(let loaded):
+            lastInvalidConfigFingerprint = nil
+            lastConfigHotReloadMessage = nil
+            config = loaded
+            applyLoadedConfigPreferences(loaded, syncLaunchAtLogin: true)
+            client = makeClient(config: config)
+            lastTestConnectionResult = nil
+            scheduleLatencyChecks()
+            recordLocalDiagnostic(
+                stage: "config_hot_reload_applied",
+                details: [
+                    "keyword_groups": "\(loaded.keywordGroups.count)",
+                    "enabled_keyword_groups": "\(loaded.preferences.enabledKeywordGroupIDs.count)"
+                ]
+            )
+            hud.showTransientStatus(strings.configHotReloaded, duration: warningDuration)
+            rebuildMenu()
+        case .invalid(let issues):
+            let fingerprint = invalidConfigFingerprint()
+            guard fingerprint != lastInvalidConfigFingerprint else { return }
+            lastInvalidConfigFingerprint = fingerprint
+            let message: String
+            if let exportURL = configLoader.exportCurrentConfigSnapshot(config, uiLanguage: settings.uiLanguage) {
+                message = strings.configHotReloadInvalidExported(exportURL.path)
+                recordLocalDiagnostic(
+                    stage: "config_hot_reload_invalid",
+                    errorKind: "invalid_config",
+                    details: [
+                        "issues": issues.joined(separator: ","),
+                        "export_path": exportURL.path
+                    ]
+                )
+            } else {
+                message = strings.configWarning("Config warning: config.jsonc could not be read")
+                recordLocalDiagnostic(
+                    stage: "config_hot_reload_invalid",
+                    errorKind: "invalid_config_export_failed",
+                    details: ["issues": issues.joined(separator: ",")]
+                )
+            }
+            lastConfigHotReloadMessage = message
+            hud.showWarningStatus(message, duration: warningDuration)
+            rebuildMenu()
+        }
+    }
+
+    private func invalidConfigFingerprint() -> String {
+        guard let data = try? Data(contentsOf: configLoader.configFileURL) else {
+            return "missing"
+        }
+        return "\(data.count):\(data.hashValue)"
+    }
+
     @objc private func selectAPISource(_ sender: NSMenuItem) {
         guard let sourceID = sender.representedObject as? String else { return }
-        _ = ConfigLoader().saveActiveSource(sourceID)
+        markInternalConfigWrite()
+        _ = configLoader.saveActiveSource(sourceID, uiLanguage: settings.uiLanguage)
         config = loadConfig()
         client = makeClient(config: config)
         lastTestConnectionResult = nil
@@ -882,19 +1182,20 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     @objc private func selectLatencyInterval(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? Int else { return }
         let interval = ConfigLatencyInterval.safeSelection(rawValue)
-        _ = ConfigLoader().saveLatencyInterval(interval)
+        markInternalConfigWrite()
+        _ = configLoader.saveLatencyInterval(interval, uiLanguage: settings.uiLanguage)
         config = loadConfig()
         scheduleLatencyChecks()
         rebuildMenu()
     }
 
     @objc private func openConfigFile() {
-        let loader = ConfigLoader()
-        guard loader.createTemplateIfMissing(uiLanguage: settings.uiLanguage) else {
+        config = configLoader.ensureValidConfig(uiLanguage: settings.uiLanguage)
+        guard configLoader.fileManager.fileExists(atPath: configLoader.configFileURL.path) else {
             hud.showWarningStatus(strings.configFileOpenFailed, duration: warningDuration)
             return
         }
-        openConfigFileUsingPlan(loader.configFileURL, plan: ConfigFileOpenPlanner.plan())
+        openConfigFileUsingPlan(configLoader.configFileURL, plan: ConfigFileOpenPlanner.plan())
     }
 
     private func openConfigFileUsingPlan(_ fileURL: URL, plan: ConfigFileOpenPlan) {
@@ -988,6 +1289,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             hud.showTransientStatus(strings.connectionLatencyCompleted, duration: warningDuration)
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     @objc private func checkConnectionAndLatency() {
@@ -1013,6 +1315,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         let priorState = String(describing: state)
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
+        resetListeningHUDRevealState()
         transcriptionTask?.cancel()
         transcriptionTask = nil
         recordingSource.cancel()
@@ -1057,6 +1360,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             recordLocalDiagnostic(stage: "global_reenabled", details: ["auto_insert_paused": "false"])
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     @objc private func requestAllPermissions() {
@@ -1081,6 +1385,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             startListening(showFailureHUD: true)
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     @objc private func requestInputMonitoringPermission() {
@@ -1280,6 +1585,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     private func enterPermissionBlockedStop(recordDiagnostic: Bool = true) {
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
+        resetListeningHUDRevealState()
         transcriptionTask?.cancel()
         transcriptionTask = nil
         recordingSource.cancel()
@@ -1386,8 +1692,8 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
                 ]
             )
             finishRecordingAndTranscribe()
-        case .cancel:
-            cancelCurrentOperation()
+        case .cancel(let reason):
+            cancelCurrentOperation(reason: reason)
         case .tapDisabled:
             handleEventTapDisabled()
         case .tapReenabled:
@@ -1445,6 +1751,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     private func handleTriggerAckTimeout() {
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
+        resetListeningHUDRevealState()
         transcriptionTask?.cancel()
         transcriptionTask = nil
         recordingSource.cancel()
@@ -1474,6 +1781,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     private func performEmergencyRescueExit() {
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
+        resetListeningHUDRevealState()
         transcriptionTask?.cancel()
         transcriptionTask = nil
         recordingSource.cancel()
@@ -1642,6 +1950,43 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         ))
     }
 
+    private func scheduleListeningHUDReveal() {
+        cancelListeningHUDRevealTimer()
+        listeningHUDShownForCurrentRecording = false
+        listeningHUDRevealTimer = Timer.scheduledTimer(
+            withTimeInterval: settings.hudRevealDelay.seconds,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.revealListeningHUDIfNeeded()
+            }
+        }
+    }
+
+    private func revealListeningHUDIfNeeded() {
+        listeningHUDRevealTimer?.invalidate()
+        listeningHUDRevealTimer = nil
+        guard ListeningHUDRevealPlanner.shouldReveal(
+            isRecording: state == .recording,
+            cancelled: false
+        ) else {
+            return
+        }
+        listeningHUDShownForCurrentRecording = true
+        hud.showListening(text: strings.listening)
+        recordHUDDiagnostic(stage: "hud_show_listening")
+    }
+
+    private func cancelListeningHUDRevealTimer() {
+        listeningHUDRevealTimer?.invalidate()
+        listeningHUDRevealTimer = nil
+    }
+
+    private func resetListeningHUDRevealState() {
+        cancelListeningHUDRevealTimer()
+        listeningHUDShownForCurrentRecording = false
+    }
+
     private func beginRecording() {
         let isAutomation = automationContinuation != nil
         guard isAutomation || (settings.listeningEnabled && !globalStopActive && state == .idle) else {
@@ -1681,8 +2026,6 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         eventTap.setCancellationActive(true)
         updateEventTapTriggerSuppression()
         actionPanel.cancel()
-        hud.showListening(text: strings.listening)
-        recordHUDDiagnostic(stage: "hud_show_listening")
         rebuildMenu()
         recordLocalDiagnostic(
             stage: "recording_start_requested",
@@ -1695,6 +2038,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         do {
             try recordingSource.start()
             recordLocalDiagnostic(stage: "recording_started", details: ["trigger": settings.triggerKey.identifier])
+            scheduleListeningHUDReveal()
             maxRecordingTimer?.invalidate()
             maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.maxRecordingDuration.rawValue), repeats: false) { [weak self] _ in
                 Task { @MainActor in self?.finishRecordingAndTranscribe() }
@@ -1704,6 +2048,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             state = .idle
             recordingStartDate = nil
             recordingFocus = nil
+            resetListeningHUDRevealState()
             eventTap.setCancellationActive(false)
             updateEventTapTriggerSuppression()
             recordLocalDiagnostic(
@@ -1736,6 +2081,8 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             stage: "recording_stop_requested",
             details: elapsed.map { ["elapsed_seconds": String(format: "%.3f", $0)] } ?? [:]
         )
+        let listeningHUDWasShown = listeningHUDShownForCurrentRecording
+        cancelListeningHUDRevealTimer()
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
 
@@ -1744,6 +2091,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             result = try recordingSource.stop(minimumDurationSeconds: settings.minRecordingDuration.seconds)
             automationRecordingResult = result
             recordingStartDate = nil
+            listeningHUDShownForCurrentRecording = false
             recordLocalDiagnostic(
                 stage: "recording_stopped",
                 details: [
@@ -1755,15 +2103,30 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         } catch {
             state = .idle
             recordingStartDate = nil
+            listeningHUDShownForCurrentRecording = false
             eventTap.setCancellationActive(false)
             updateEventTapTriggerSuppression()
             let message = sanitizedMessage(for: error)
+            let validationStatus = recordingValidationStatus(for: error)
+            let shouldShowHUD = RecordingStopFailurePresentationPlanner.shouldShowHUD(
+                validationStatus: validationStatus,
+                listeningHUDWasShown: listeningHUDWasShown
+            )
             recordLocalDiagnostic(
                 stage: "recording_stop_failed",
                 errorKind: diagnosticKind(for: error),
-                details: elapsed.map { ["elapsed_seconds": String(format: "%.3f", $0)] } ?? [:]
+                details: {
+                    var details = elapsed.map { ["elapsed_seconds": String(format: "%.3f", $0)] } ?? [:]
+                    details["hud_visible_before_stop"] = listeningHUDWasShown ? "true" : "false"
+                    details["shown_to_user"] = shouldShowHUD ? "true" : "false"
+                    return details
+                }()
             )
-            hud.showWarningStatus(message, duration: warningDuration)
+            if shouldShowHUD {
+                hud.showWarningStatus(message, duration: warningDuration)
+            } else {
+                hud.hide()
+            }
             rebuildMenu()
             completeAutomation(
                 ok: false,
@@ -1779,7 +2142,10 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         let styleDescriptor = automationOptions?.styleSelection.map {
             TranscriptionStyleResolver.resolve(selection: $0, customStyles: config.customStyles)
         } ?? currentStyleDescriptor
-        let instruction = TranscriptionInstructionBuilder.instruction(descriptor: styleDescriptor)
+        let instruction = TranscriptionInstructionBuilder.instruction(
+            descriptor: styleDescriptor,
+            keywordHints: currentKeywordHintsContext
+        )
         let shouldAutoInsert: Bool
         let autoInsertSkipReason: String?
         if automationOptions?.forceActionPanel == true {
@@ -1808,6 +2174,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     }
 
     private func startTranscription(_ pending: PendingTranscription) {
+        resetListeningHUDRevealState()
         state = .transcribing
         eventTap.setCancellationActive(true)
         updateEventTapTriggerSuppression()
@@ -1853,6 +2220,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         guard !finalText.isEmpty else {
             hud.showWarningStatus(strings.noTextRecognized, duration: warningDuration)
             rebuildMenu()
+            applyPendingConfigHotReloadIfNeeded()
             completeAutomation(
                 ok: false,
                 pending: pending,
@@ -1915,6 +2283,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             )
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     private func updateLastDiagnosticInsertion(_ reason: String?) {
@@ -2046,6 +2415,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             )
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     private func showRetryActionPanel(error: Error, pending: PendingTranscription?) {
@@ -2137,7 +2507,10 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             selection: selection,
             customStyles: config.customStyles
         )
-        let instruction = TranscriptionInstructionBuilder.instruction(descriptor: descriptor)
+        let instruction = TranscriptionInstructionBuilder.instruction(
+            descriptor: descriptor,
+            keywordHints: currentKeywordHintsContext
+        )
         let pending = PendingTranscription(
             result: previousPending.result,
             model: previousPending.model,
@@ -2160,26 +2533,40 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         startTranscription(pending)
     }
 
-    private func cancelCurrentOperation() {
+    private func cancelCurrentOperation(reason: EventTapCancellationReason = .escapeKey) {
         switch state {
         case .recording:
+            let isSilent = reason == .triggerCombination
             recordingSource.cancel()
             state = .idle
             eventTap.setCancellationActive(false)
             updateEventTapTriggerSuppression()
             maxRecordingTimer?.invalidate()
             maxRecordingTimer = nil
+            resetListeningHUDRevealState()
             recordingFocus = nil
             recordingStartDate = nil
             pendingTranscription = nil
             actionPanel.cancel()
-            hud.showTransientStatus(strings.cancelled, duration: warningDuration)
+            if isSilent {
+                hud.hide()
+            } else {
+                hud.showTransientStatus(strings.cancelled, duration: warningDuration)
+            }
+            recordLocalDiagnostic(
+                stage: "recording_cancelled",
+                errorKind: isSilent ? "trigger_combination_cancelled" : "cancelled",
+                details: [
+                    "reason": String(describing: reason),
+                    "shown_to_user": isSilent ? "false" : "true"
+                ]
+            )
             completeAutomation(
                 ok: false,
                 pending: nil,
                 injectionResult: nil,
                 fallbackReason: nil,
-                errorKind: "cancelled"
+                errorKind: isSilent ? "trigger_combination_cancelled" : "cancelled"
             )
         case .transcribing:
             let pending = pendingTranscription
@@ -2189,6 +2576,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             eventTap.setCancellationActive(false)
             updateEventTapTriggerSuppression()
             recordingFocus = nil
+            resetListeningHUDRevealState()
             pendingTranscription = nil
             actionPanel.cancel()
             hud.showTransientStatus(strings.cancelled, duration: warningDuration)
@@ -2204,6 +2592,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             break
         }
         rebuildMenu()
+        applyPendingConfigHotReloadIfNeeded()
     }
 
     private func refreshModels(showStatus: Bool) async {
@@ -2238,6 +2627,18 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             return mimoError.diagnosticKind
         }
         return String(describing: type(of: error))
+    }
+
+    private func recordingValidationStatus(for error: Error) -> RecordingValidationResult.Status? {
+        guard let audioError = error as? AudioRecorderError else { return nil }
+        switch audioError {
+        case .tooShort:
+            return .tooShort
+        case .tooQuiet:
+            return .tooQuiet
+        case .alreadyRecording, .notRecording, .noInputFormat, .noSamples, .conversionFailed, .invalidWAV:
+            return nil
+        }
     }
 }
 

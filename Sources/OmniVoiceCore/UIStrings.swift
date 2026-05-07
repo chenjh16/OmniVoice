@@ -28,6 +28,10 @@ public struct UIStrings: Sendable {
     public var latencyInterval: String { language == .chinese ? "测速频率" : "Latency Check" }
     public var connectionLatencyCompleted: String { language == .chinese ? "连接检查与测速已完成" : "Connection and latency check complete" }
     public var editCustomStyles: String { language == .chinese ? "打开 config.jsonc 编辑自定义风格" : "Open config.jsonc to edit custom styles" }
+    public var keywordHints: String { language == .chinese ? "关键词" : "Keyword Hints" }
+    public var enableKeywordHints: String { language == .chinese ? "启用关键词提示" : "Enable Keyword Hints" }
+    public var editKeywords: String { language == .chinese ? "打开 config 文件编辑关键词" : "Open config file to edit keywords" }
+    public var noKeywordGroups: String { language == .chinese ? "没有可用关键词组" : "No keyword groups available" }
     public var openConfigFile: String { language == .chinese ? "打开 config 文件" : "Open config file" }
     public var configFileOpened: String { language == .chinese ? "已打开 config 文件" : "Opened config file" }
     public var configFileOpenedWithDefaultApp: String {
@@ -43,8 +47,10 @@ public struct UIStrings: Sendable {
     }
     public var operationFailed: String { language == .chinese ? "操作失败" : "Operation failed" }
     public var launchAtLogin: String { language == .chinese ? "开机自启" : "Launch at Login" }
+    public var displayHints: String { language == .chinese ? "提示与显示" : "Display & Hints" }
     public var hudStyle: String { language == .chinese ? "HUD 样式" : "HUD Style" }
     public var hudMessageDuration: String { language == .chinese ? "提示显示时长" : "Message Duration" }
+    public var hudRevealDelay: String { language == .chinese ? "HUD 弹出延迟" : "HUD Reveal Delay" }
     public var retry: String { language == .chinese ? "重试" : "Retry" }
     public var requestFailed: String { language == .chinese ? "请求失败" : "Request Failed" }
     public var recordTriggerKey: String { language == .chinese ? "录制触发键" : "Record Trigger Key" }
@@ -76,6 +82,7 @@ public struct UIStrings: Sendable {
     public var cancelled: String { language == .chinese ? "已取消" : "Cancelled" }
     public var noTextRecognized: String { language == .chinese ? "没有识别到文本" : "No text recognized" }
     public var configReloaded: String { language == .chinese ? "配置已重新加载" : "Config reloaded" }
+    public var configHotReloaded: String { language == .chinese ? "配置已自动更新" : "Config updated automatically" }
     public var modelsRefreshed: String { language == .chinese ? "模型列表已刷新" : "Models refreshed" }
     public var permissionIssue: String { language == .chinese ? "监听异常，请检查权限" : "Listening unavailable; check permissions" }
     public var eventTapWatchdogReset: String {
@@ -163,6 +170,28 @@ public struct UIStrings: Sendable {
         return language == .chinese ? "\(name)（自定义）" : "\(name) (Custom)"
     }
 
+    public func keywordHintsTitle(enabled: Bool, selectedCount: Int) -> String {
+        let state: String
+        if enabled {
+            state = selectedCount > 0
+                ? (language == .chinese ? "\(selectedCount) 组" : "\(selectedCount) groups")
+                : (language == .chinese ? "未选择" : "none")
+        } else {
+            state = language == .chinese ? "关闭" : "off"
+        }
+        return language == .chinese ? "关键词：\(state)" : "Keyword Hints: \(state)"
+    }
+
+    public func keywordGroupMenuItem(_ group: KeywordGroup) -> String {
+        group.localizedName(in: language)
+    }
+
+    public func configHotReloadInvalidExported(_ path: String) -> String {
+        language == .chinese
+            ? "配置文件有问题，当前配置已导出到 \(path)"
+            : "The config file has a problem; the current config was exported to \(path)"
+    }
+
     public func panelStyleSwitchTitle(_ descriptor: TranscriptionStyleDescriptor) -> String {
         language == .chinese
             ? "风格：\(descriptor.localizedName(in: language))"
@@ -193,6 +222,12 @@ public struct UIStrings: Sendable {
 
     public func hudMessageDurationTitle(_ duration: HUDMessageDuration) -> String {
         language == .chinese ? "提示显示时长：\(duration.displayName)" : "Message Duration: \(duration.displayName)"
+    }
+
+    public func hudRevealDelayTitle(_ delay: HUDRevealDelay) -> String {
+        language == .chinese
+            ? "HUD 弹出延迟：\(delay.displayName(in: language))"
+            : "HUD Reveal Delay: \(delay.displayName(in: language))"
     }
 
     public func configurationTitle(_ config: MimoConfig) -> String {
@@ -255,6 +290,22 @@ public struct UIStrings: Sendable {
             return language == .chinese
                 ? "提醒：config.jsonc 至少需要一个 API 来源"
                 : "Reminder: config.jsonc needs at least one API source"
+        case "Config warning: invalid keyword groups ignored":
+            return language == .chinese
+                ? "提醒：部分关键词组无效，已忽略"
+                : "Reminder: some keyword groups are invalid and were ignored"
+        case "Config warning: invalid keywords ignored":
+            return language == .chinese
+                ? "提醒：部分关键词无效，已忽略"
+                : "Reminder: some keywords are invalid and were ignored"
+        case "Config warning: keyword group limit exceeded":
+            return language == .chinese
+                ? "提醒：单个关键词组最多使用 200 个关键词，超出部分已忽略"
+                : "Reminder: each keyword group uses at most 200 keywords; extra items were ignored"
+        case "Config warning: keyword hints exceed total limit":
+            return language == .chinese
+                ? "提醒：最多注入 500 个关键词，超出部分不会进入 prompt"
+                : "Reminder: at most 500 keywords are injected; extra items are left out of the prompt"
         default:
             return warning
         }
@@ -458,10 +509,22 @@ public struct UIStrings: Sendable {
             return "打开配置文件后，可以用 custom_styles 添加自己的转写风格。"
         case (.english, .customStyles):
             return "Open the config file to add your own transcription styles with custom_styles."
+        case (.chinese, .keywordHints):
+            return "把选中的关键词组作为识别提示加入转写 prompt；只在发音和上下文合理时参考。"
+        case (.english, .keywordHints):
+            return "Add selected keyword groups to the transcription prompt as recognition hints when the audio and context fit."
+        case (.chinese, .displayHints):
+            return "调整 HUD 样式、短提示停留时间和按下触发键后的 HUD 出现速度。"
+        case (.english, .displayHints):
+            return "Adjust HUD style, short-message duration, and how quickly the listening HUD appears after pressing the trigger."
         case (.chinese, .hudMessageDuration):
             return "设置短提示自动消失前停留多久。"
         case (.english, .hudMessageDuration):
             return "Choose how long short status messages stay visible."
+        case (.chinese, .hudRevealDelay):
+            return "录音会在按下触发键时立即开始；这里只控制聆听 HUD 延迟多久出现。"
+        case (.english, .hudRevealDelay):
+            return "Recording starts as soon as the trigger is pressed; this only controls how long the listening HUD waits before appearing."
         case (.chinese, .latency):
             return "用模型列表接口测量每个 API 来源的大致响应速度，不发送音频。"
         case (.english, .latency):
@@ -488,7 +551,10 @@ public enum MenuTooltipKey: Sendable {
     case styleTechnical
     case styleRewrite
     case customStyles
+    case keywordHints
+    case displayHints
     case hudMessageDuration
+    case hudRevealDelay
     case latency
     case apiSourceAuto
 }

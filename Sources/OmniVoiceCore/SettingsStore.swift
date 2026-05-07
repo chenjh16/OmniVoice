@@ -8,6 +8,8 @@ public final class SettingsStore: @unchecked Sendable {
         public static let language = "OmniVoice.language"
         public static let uiLanguage = "OmniVoice.uiLanguage"
         public static let style = "OmniVoice.transcriptionStyle"
+        public static let keywordHintsEnabled = "OmniVoice.keywordHintsEnabled"
+        public static let enabledKeywordGroupIDs = "OmniVoice.enabledKeywordGroupIDs"
         public static let triggerKeyIdentifier = "OmniVoice.triggerKeyIdentifier"
         public static let minRecordingDuration = "OmniVoice.minRecordingDuration"
         public static let maxRecordingDuration = "OmniVoice.maxRecordingDuration"
@@ -19,6 +21,7 @@ public final class SettingsStore: @unchecked Sendable {
         public static let stopReason = "OmniVoice.stopReason"
         public static let hudVisualStyle = "OmniVoice.hudVisualStyle"
         public static let hudMessageDuration = "OmniVoice.hudMessageDuration"
+        public static let hudRevealDelay = "OmniVoice.hudRevealDelay"
     }
 
     private let defaults: UserDefaults
@@ -33,13 +36,16 @@ public final class SettingsStore: @unchecked Sendable {
             Key.selectedModel: AllowedSpeechModel.defaultModel.rawValue,
             Key.language: LanguagePreference.defaultLanguage.rawValue,
             Key.style: TranscriptionStyle.defaultStyle.rawValue,
+            Key.keywordHintsEnabled: true,
+            Key.enabledKeywordGroupIDs: ConfigPreferences.defaultEnabledKeywordGroupIDs,
             Key.triggerKeyIdentifier: TriggerKey.defaultTrigger.identifier,
             Key.minRecordingDuration: MinRecordingDuration.defaultDuration.rawValue,
             Key.maxRecordingDuration: MaxRecordingDuration.defaultDuration.rawValue,
             Key.autoInsert: true,
             Key.listeningEnabled: true,
             Key.hudVisualStyle: HUDVisualStyle.defaultStyle.rawValue,
-            Key.hudMessageDuration: HUDMessageDuration.defaultDuration.rawValue
+            Key.hudMessageDuration: HUDMessageDuration.defaultDuration.rawValue,
+            Key.hudRevealDelay: HUDRevealDelay.defaultDelay.rawValue
         ])
     }
 
@@ -88,6 +94,16 @@ public final class SettingsStore: @unchecked Sendable {
             )
         }
         set { defaults.set(newValue.rawValue, forKey: Key.style) }
+    }
+
+    public var keywordHintsEnabled: Bool {
+        get { defaults.bool(forKey: Key.keywordHintsEnabled) }
+        set { defaults.set(newValue, forKey: Key.keywordHintsEnabled) }
+    }
+
+    public var enabledKeywordGroupIDs: [String] {
+        get { defaults.stringArray(forKey: Key.enabledKeywordGroupIDs) ?? [] }
+        set { defaults.set(newValue, forKey: Key.enabledKeywordGroupIDs) }
     }
 
     public var triggerKey: TriggerKey {
@@ -154,6 +170,44 @@ public final class SettingsStore: @unchecked Sendable {
     public var hudMessageDuration: HUDMessageDuration {
         get { HUDMessageDuration.safeSelection(defaults.integer(forKey: Key.hudMessageDuration)) }
         set { defaults.set(newValue.rawValue, forKey: Key.hudMessageDuration) }
+    }
+
+    public var hudRevealDelay: HUDRevealDelay {
+        get { HUDRevealDelay.safeSelection(defaults.integer(forKey: Key.hudRevealDelay)) }
+        set { defaults.set(newValue.rawValue, forKey: Key.hudRevealDelay) }
+    }
+
+    public func applyConfigPreferences(_ preferences: ConfigPreferences) {
+        selectedModel = preferences.selectedModel
+        uiLanguage = preferences.uiLanguage
+        transcriptionStyleSelection = preferences.transcriptionStyleSelection
+        keywordHintsEnabled = preferences.keywordHintsEnabled
+        enabledKeywordGroupIDs = preferences.enabledKeywordGroupIDs
+        triggerKey = preferences.triggerKey
+        minRecordingDuration = preferences.minRecordingDuration
+        maxRecordingDuration = preferences.maxRecordingDuration
+        autoInsert = preferences.autoInsert
+        hudVisualStyle = preferences.hudVisualStyle
+        hudMessageDuration = preferences.hudMessageDuration
+        hudRevealDelay = preferences.hudRevealDelay
+    }
+
+    public func configPreferences(launchAtLogin: Bool) -> ConfigPreferences {
+        ConfigPreferences(
+            selectedModel: selectedModel,
+            uiLanguage: uiLanguage,
+            transcriptionStyleSelection: transcriptionStyleSelection,
+            keywordHintsEnabled: keywordHintsEnabled,
+            enabledKeywordGroupIDs: enabledKeywordGroupIDs,
+            triggerKey: triggerKey,
+            minRecordingDuration: minRecordingDuration,
+            maxRecordingDuration: maxRecordingDuration,
+            autoInsert: autoInsert,
+            launchAtLogin: launchAtLogin,
+            hudVisualStyle: hudVisualStyle,
+            hudMessageDuration: hudMessageDuration,
+            hudRevealDelay: hudRevealDelay
+        )
     }
 }
 

@@ -232,6 +232,10 @@ public final class ActionPanelController {
 
         let backgroundView = ActionPanelBackgroundView()
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
+        backgroundView.onEffectiveAppearanceChanged = { [weak self] in
+            guard let self else { return }
+            self.applyPalette(status: self.currentScenario == .retry ? .warning : .normal)
+        }
 
         let contentContainer = NSView()
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -377,7 +381,10 @@ public final class ActionPanelController {
     }
 
     private func applyPalette(status: HUDStatusTone) {
-        let surface = HUDSurfaceResolver.resolve(preference: visualStyle)
+        let surface = HUDSurfaceResolver.resolve(
+            preference: visualStyle,
+            systemAppearance: backgroundView.map { glassAppearance(for: $0.effectiveAppearance) } ?? .dark
+        )
         backgroundView?.surface = surface
         backgroundView?.statusTone = status
         let textTone: HUDTextTone
@@ -523,6 +530,7 @@ private final class ActionPanelBackgroundView: NSView {
     }
 
     private var nativeGlassView: NSView?
+    var onEffectiveAppearanceChanged: (() -> Void)?
     var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal) {
         didSet {
             updateNativeGlassAppearance()
@@ -603,6 +611,11 @@ private final class ActionPanelBackgroundView: NSView {
     override func layout() {
         super.layout()
         updateNativeGlassCornerRadius()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onEffectiveAppearanceChanged?()
     }
 
     private func updateNativeGlassAppearance() {

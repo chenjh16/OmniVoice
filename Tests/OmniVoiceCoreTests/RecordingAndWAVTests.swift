@@ -18,6 +18,33 @@ struct RecordingAndWAVTests {
         #expect(RecordingValidator.validate(durationSeconds: 1.0, overallRMS: 0.001).status == .tooQuiet)
         #expect(RecordingValidator.validate(durationSeconds: 1.0, overallRMS: 0.1).status == .valid)
     }
+
+    @Test
+    func hudRevealAndShortRecordingPresentationPlannersFavorLowInterruption() {
+        #expect(ListeningHUDRevealPlanner.defaultDelaySeconds == 0.20)
+        #expect(HUDRevealDelay.defaultDelay == .milliseconds200)
+        #expect(HUDRevealDelay.allCases.map(\.rawValue) == [100, 200, 300, 400, 500])
+        #expect(HUDRevealDelay.safeSelection(123) == .milliseconds200)
+        #expect(HUDRevealDelay.milliseconds200.displayName(in: .chinese).contains("推荐"))
+        #expect(HUDRevealDelay.milliseconds200.displayName(in: .english).contains("Recommended"))
+        #expect(ListeningHUDRevealPlanner.shouldReveal(isRecording: true, cancelled: false))
+        #expect(!ListeningHUDRevealPlanner.shouldReveal(isRecording: false, cancelled: false))
+        #expect(!ListeningHUDRevealPlanner.shouldReveal(isRecording: true, cancelled: true))
+
+        #expect(!RecordingStopFailurePresentationPlanner.shouldShowHUD(
+            validationStatus: .tooShort,
+            listeningHUDWasShown: false
+        ))
+        #expect(RecordingStopFailurePresentationPlanner.shouldShowHUD(
+            validationStatus: .tooShort,
+            listeningHUDWasShown: true
+        ))
+        #expect(RecordingStopFailurePresentationPlanner.shouldShowHUD(
+            validationStatus: .tooQuiet,
+            listeningHUDWasShown: false
+        ))
+    }
+
     @Test
     func idleRecorderCancelKeepsRecorderStopped() {
         let recorder: any RecordingSource = AudioRecorder()

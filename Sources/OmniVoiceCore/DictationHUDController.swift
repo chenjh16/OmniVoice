@@ -73,6 +73,9 @@ public final class DictationHUDController {
         panel.contentView = NSView()
         panel.contentView?.addSubview(capsuleView)
         capsuleView.addSubview(contentStack)
+        capsuleView.onEffectiveAppearanceChanged = { [weak self] in
+            self?.applyVisualStyle()
+        }
 
         NSLayoutConstraint.activate([
             capsuleView.leadingAnchor.constraint(equalTo: panel.contentView!.leadingAnchor),
@@ -314,7 +317,10 @@ public final class DictationHUDController {
     }
 
     private func applyVisualStyle() {
-        let resolved = HUDSurfaceResolver.resolve(preference: visualStyle)
+        let resolved = HUDSurfaceResolver.resolve(
+            preference: visualStyle,
+            systemAppearance: glassAppearance(for: capsuleView.effectiveAppearance)
+        )
         capsuleView.surface = resolved
         applyPalette()
     }
@@ -378,6 +384,7 @@ private final class CapsuleBackgroundView: NSView {
     }
 
     private var nativeGlassView: NSView?
+    var onEffectiveAppearanceChanged: (() -> Void)?
     var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal) {
         didSet {
             updateNativeGlassAppearance()
@@ -442,6 +449,11 @@ private final class CapsuleBackgroundView: NSView {
     override func layout() {
         super.layout()
         updateNativeGlassCornerRadius()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onEffectiveAppearanceChanged?()
     }
 
     private func updateNativeGlassAppearance() {
