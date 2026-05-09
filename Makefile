@@ -1,5 +1,7 @@
 APP_NAME := OmniVoice
 EXECUTABLE := OmniVoice
+ENABLE_E2E ?= 0
+EXECUTABLE_PRODUCT := $(if $(filter 1 true yes,$(ENABLE_E2E)),OmniVoiceE2E,OmniVoice)
 BUNDLE_ID ?= dev.local.omnivoice
 CONFIGURATION ?= release
 SIGN_IDENTITY ?= -
@@ -7,14 +9,14 @@ INSTALL_DIR ?= /Applications
 BUILD_ROOT := .build
 APP_BUNDLE := $(BUILD_ROOT)/$(APP_NAME).app
 INSTALLED_APP := $(INSTALL_DIR)/$(APP_NAME).app
-EXECUTABLE_PATH := $(BUILD_ROOT)/$(CONFIGURATION)/$(EXECUTABLE)
+EXECUTABLE_PATH := $(BUILD_ROOT)/$(CONFIGURATION)/$(EXECUTABLE_PRODUCT)
 CONFIG_TEMPLATE := config/omnivoice.config.example.jsonc
 USER_CONFIG ?= $(HOME)/.config/omnivoice/config.jsonc
 
-.PHONY: build run dev-run install stop-installed verify cleanup-legacy config-template clean test
+.PHONY: build run dev-run install stop-installed verify cleanup-legacy config-template clean test check
 
 build:
-	swift build -c $(CONFIGURATION)
+	swift build -c $(CONFIGURATION) --product $(EXECUTABLE_PRODUCT)
 	rm -rf "$(APP_BUNDLE)"
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources"
 	cp "$(EXECUTABLE_PATH)" "$(APP_BUNDLE)/Contents/MacOS/$(EXECUTABLE)"
@@ -84,6 +86,11 @@ verify:
 
 test:
 	swift test
+
+check:
+	git diff --check
+	swift test
+	$(MAKE) build
 
 clean:
 	rm -rf .build

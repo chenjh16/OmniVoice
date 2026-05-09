@@ -3,6 +3,7 @@ import OmniVoiceCore
 
 public final class WAVReplayRecordingSource: ReplayRecordingSource, @unchecked Sendable {
     public var onRMSLevel: (@Sendable (Float) -> Void)?
+    public var onSampleChunk: (@Sendable (AudioSampleChunk) -> Void)?
 
     private let sourceSamples: [Float]
     private let chunkFrameCount: Int
@@ -60,7 +61,10 @@ public final class WAVReplayRecordingSource: ReplayRecordingSource, @unchecked S
         }
     }
 
-    public func stop(minimumDurationSeconds: Double = RecordingValidator.minimumDurationSeconds) throws -> AudioRecordingResult {
+    public func stop(
+        minimumDurationSeconds: Double = RecordingValidator.minimumDurationSeconds,
+        validationPolicy: RecordingValidationPolicy = .voiceGated
+    ) throws -> AudioRecordingResult {
         replayTask?.cancel()
         replayTask = nil
 
@@ -83,7 +87,8 @@ public final class WAVReplayRecordingSource: ReplayRecordingSource, @unchecked S
         let validation = RecordingValidator.validate(
             durationSeconds: duration,
             overallRMS: rms,
-            minimumDurationSeconds: minimumDurationSeconds
+            minimumDurationSeconds: minimumDurationSeconds,
+            policy: validationPolicy
         )
         switch validation.status {
         case .valid:
@@ -160,6 +165,7 @@ public final class WAVReplayRecordingSource: ReplayRecordingSource, @unchecked S
             return min(max(envelope * 20, 0), 1)
         }
         onRMSLevel?(level)
+        onSampleChunk?(AudioSampleChunk(samples: chunk, sampleRate: Double(WAVFormat.mono16kPCM16.sampleRate)))
     }
 }
 

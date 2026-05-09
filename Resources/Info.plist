@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.1</string>
+	<string>0.1.2</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>3</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
@@ -32,5 +32,7 @@
 	<string>Copyright © 2026 OmniVoice contributors.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OmniVoice records while you hold the selected trigger key so it can transcribe your speech.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>OmniVoice can use macOS Speech Recognition as an optional fallback before a text model rewrites the draft.</string>
 </dict>
 </plist>

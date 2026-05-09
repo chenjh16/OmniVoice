@@ -1,0 +1,250 @@
+import Foundation
+import Testing
+@testable import OmniVoiceCore
+
+extension ConfigurationTests {
+
+    @Test
+    func ensureValidConfigMigratesDeprecatedInputAudioModelSection() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("omnivoice-config-legacy-input-audio-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let configURL = directory.appendingPathComponent("config.jsonc")
+        try Data("""
+        {
+          "active_source": "cn",
+          "transcription_pipeline": { "mode": "input_audio" },
+          "models": {
+            "input_audio": {
+              "default_model": "mimo-v2-omni",
+              "extra_models": ["gpt-audio-1.5"]
+            },
+            "text_llm": {
+              "default_model": "mimo-v2-pro",
+              "extra_models": ["mimo-v2.5-pro"]
+            }
+          },
+          "sources": {
+            "cn": {
+              "base_url": "https://cn.example.test",
+              "api_key": "cn-secret"
+            }
+          }
+        }
+        """.utf8).write(to: configURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+
+        let loader = ConfigLoader(configFileURL: configURL)
+        #expect(loader.loadValidConfigWithoutRepair() == .invalid([
+            "models_input_audio_deprecated",
+            "models_text_llm_extra_models_deprecated"
+        ]))
+        let migrated = loader.ensureValidConfig(uiLanguage: .english)
+
+        #expect(migrated.modelCatalogs.inputAudioDefaultModel == .mimoV2Omni)
+        #expect(migrated.modelCatalogs.textLLMDefaultModel == .mimoV2Pro)
+        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("config.jsonc.bak-") }
+        #expect(backups.count == 1)
+        let object = try jsoncObject(from: configURL)
+        let models = try #require(object["models"] as? [String: Any])
+        #expect(models["input_audio"] == nil)
+        let audioLLM = try #require(models["audio_llm"] as? [String: Any])
+        #expect(audioLLM["default_model"] as? String == "mimo-v2-omni")
+        let textLLM = try #require(models["text_llm"] as? [String: Any])
+        #expect(textLLM["extra_models"] == nil)
+    }
+
+    @Test
+    func ensureValidConfigRemovesDeprecatedTextLLMExtraModels() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("omnivoice-config-legacy-text-extra-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let configURL = directory.appendingPathComponent("config.jsonc")
+        try Data("""
+        {
+          "active_source": "cn",
+          "transcription_pipeline": { "mode": "system_asr_text_llm" },
+          "models": {
+            "audio_llm": {
+              "default_model": "mimo-v2.5",
+              "extra_models": ["mimo-v2-omni"]
+            },
+            "text_llm": {
+              "default_model": "mimo-v2-pro",
+              "extra_models": ["mimo-v2.5-pro", "gpt-5.5"]
+            }
+          },
+          "system_asr": { "engine": "classic_speech", "keyword_hints_enabled": true },
+          "sources": {
+            "cn": {
+              "base_url": "https://cn.example.test",
+              "api_key": "cn-secret"
+            }
+          },
+          "latency": { "enabled": true, "interval_seconds": 1800 },
+          "preferences": {
+            "ui_language": "en",
+            "transcription_style": "rewrite",
+            "keyword_hints_enabled": true,
+            "enabled_keyword_groups": [],
+            "trigger_key": "fn-globe",
+            "min_recording_duration_ms": 500,
+            "max_recording_duration_seconds": 120,
+            "auto_insert": true,
+            "launch_at_login": true,
+            "hud": {
+              "visual_style": "automatic",
+              "message_duration_seconds": 3,
+              "reveal_delay_ms": 100,
+              "live_asr_preview_enabled": false
+            }
+          }
+        }
+        """.utf8).write(to: configURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+
+        let loader = ConfigLoader(configFileURL: configURL)
+        #expect(loader.loadValidConfigWithoutRepair() == .invalid(["models_text_llm_extra_models_deprecated"]))
+        let repaired = loader.ensureValidConfig(uiLanguage: .english)
+
+        #expect(repaired.modelCatalogs.textLLMDefaultModel == .mimoV2Pro)
+        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("config.jsonc.bak-") }
+        #expect(backups.count == 1)
+        let object = try jsoncObject(from: configURL)
+        let models = try #require(object["models"] as? [String: Any])
+        let textLLM = try #require(models["text_llm"] as? [String: Any])
+        #expect(textLLM["default_model"] as? String == "mimo-v2-pro")
+        #expect(textLLM["extra_models"] == nil)
+    }
+
+    @Test
+    func configLoaderBacksUpAndRebuildsIncompleteConfig() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("omnivoice-config-canonical-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let jsoncURL = directory.appendingPathComponent("config.jsonc")
+        try Data("""
+        {
+          "base_url": "https://old.example.test",
+          "api_key": "old-secret",
+          "default_model": "mimo-v2.5"
+        }
+        """.utf8).write(to: jsoncURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: jsoncURL.path)
+
+        let loader = ConfigLoader(configFileURL: jsoncURL)
+        let rebuilt = loader.ensureValidConfig(uiLanguage: .chinese)
+        #expect(rebuilt.source == .configFile)
+        #expect(rebuilt.activeSourceID == "cn")
+        #expect(rebuilt.resolvedSourceID == "cn")
+        #expect(rebuilt.apiKey == nil)
+        #expect(rebuilt.preferences.uiLanguage == .chinese)
+        #expect(rebuilt.preferences.hudRevealDelay == .milliseconds100)
+        #expect(rebuilt.customStyles.first?.id == "meeting_notes")
+        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("config.jsonc.bak-") }
+        #expect(backups.count == 1)
+
+        let fallbackURL = directory.appendingPathComponent("config.json")
+        try Data("""
+        {
+          "active_source": "fallback",
+          "sources": {
+            "fallback": {
+              "base_url": "https://fallback.example.test",
+              "api_key": "fallback-secret"
+            }
+          }
+        }
+        """.utf8).write(to: fallbackURL)
+        let missingFallback = ConfigLoader(configFileURL: directory.appendingPathComponent("missing.jsonc")).load()
+        #expect(missingFallback.source == .missing)
+        #expect(missingFallback.apiKey == nil)
+    }
+
+    @Test
+    func ensureValidConfigRebuildsBadJSONEmptySourcesAndInvalidPreferences() throws {
+        let cases = [
+            ("bad-json", "{ nope"),
+            ("empty-sources", """
+            {
+              "active_source": "auto",
+              "transcription_pipeline": { "mode": "input_audio" },
+              "models": {
+                "audio_llm": { "default_model": "mimo-v2.5", "extra_models": [] },
+                "text_llm": { "default_model": "mimo-v2.5" }
+              },
+              "system_asr": { "engine": "classic_speech", "keyword_hints_enabled": true },
+              "sources": {},
+              "latency": { "enabled": true, "interval_seconds": 1800 },
+              "preferences": {
+                "ui_language": "en",
+                "transcription_style": "concise",
+                "trigger_key": "fn-globe",
+                "min_recording_duration_ms": 500,
+                "max_recording_duration_seconds": 60,
+                "auto_insert": true,
+                "launch_at_login": false,
+                "hud": {
+                  "visual_style": "automatic",
+                  "message_duration_seconds": 3,
+                  "reveal_delay_ms": 200
+                }
+              }
+            }
+            """),
+            ("bad-preferences", """
+            {
+              "active_source": "config1",
+              "transcription_pipeline": { "mode": "input_audio" },
+              "models": {
+                "audio_llm": { "default_model": "mimo-v2.5", "extra_models": [] },
+                "text_llm": { "default_model": "mimo-v2.5" }
+              },
+              "system_asr": { "engine": "classic_speech", "keyword_hints_enabled": true },
+              "sources": {
+                "config1": {
+                  "base_url": "https://example.test",
+                  "api_key": ""
+                }
+              },
+              "latency": { "enabled": true, "interval_seconds": 1800 },
+              "preferences": {
+                "ui_language": "en",
+                "transcription_style": "concise",
+                "trigger_key": "fn-globe",
+                "min_recording_duration_ms": 500,
+                "max_recording_duration_seconds": 60,
+                "auto_insert": true,
+                "launch_at_login": false,
+                "hud": {
+                  "visual_style": "automatic",
+                  "message_duration_seconds": 3,
+                  "reveal_delay_ms": 999
+                }
+              }
+            }
+            """)
+        ]
+
+        for (name, text) in cases {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("omnivoice-\(name)-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let configURL = directory.appendingPathComponent("config.jsonc")
+            try Data(text.utf8).write(to: configURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+
+            let rebuilt = ConfigLoader(configFileURL: configURL).ensureValidConfig(uiLanguage: .english)
+            #expect(rebuilt.source == .configFile)
+            #expect(rebuilt.resolvedSourceID == (name == "bad-preferences" ? "config1" : "cn"))
+            #expect(rebuilt.preferences.uiLanguage == .english)
+            #expect(rebuilt.preferences.hudRevealDelay == .milliseconds100)
+            let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                .filter { $0.hasPrefix("config.jsonc.bak-") }
+            #expect(backups.count == 1)
+        }
+    }
+}

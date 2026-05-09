@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "OmniVoice", targets: ["OmniVoiceApp"]),
+        .executable(name: "OmniVoiceE2E", targets: ["OmniVoiceE2EApp"]),
         .library(name: "OmniVoiceCore", targets: ["OmniVoiceCore"])
     ],
     targets: [
@@ -21,7 +22,8 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("CoreGraphics"),
                 .linkedFramework("ServiceManagement"),
-                .linkedFramework("Security")
+                .linkedFramework("Security"),
+                .linkedFramework("Speech")
             ]
         ),
         .target(
@@ -34,12 +36,24 @@ let package = Package(
         .executableTarget(
             name: "OmniVoiceApp",
             dependencies: [
+                "OmniVoiceCore"
+            ]
+        ),
+        .executableTarget(
+            name: "OmniVoiceE2EApp",
+            dependencies: [
                 "OmniVoiceCore",
                 "OmniVoiceE2ESupport"
             ]
         ),
         .testTarget(
             name: "OmniVoiceCoreTests",
+            dependencies: [
+                "OmniVoiceCore"
+            ]
+        ),
+        .testTarget(
+            name: "OmniVoiceE2ESupportTests",
             dependencies: [
                 "OmniVoiceCore",
                 "OmniVoiceE2ESupport"
