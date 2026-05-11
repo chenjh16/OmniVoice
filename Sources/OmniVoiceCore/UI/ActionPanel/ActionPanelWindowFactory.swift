@@ -59,7 +59,7 @@ enum ActionPanelWindowFactory {
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = HaloTextField(labelWithString: "")
-        titleLabel.font = .systemFont(ofSize: 14.5, weight: .semibold)
+        titleLabel.font = GlassTypography.actionPanelTitleFont(for: .darkCapsule)
         titleLabel.alignment = ActionPanelTextAlignmentPolicy.title
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -69,7 +69,7 @@ enum ActionPanelWindowFactory {
         textView.isSelectable = true
         textView.drawsBackground = false
         textView.alignment = ActionPanelTextAlignmentPolicy.body
-        textView.font = .systemFont(ofSize: 14, weight: .semibold)
+        textView.font = GlassTypography.actionPanelBodyFont(for: .darkCapsule)
         textView.textContainerInset = NSSize(width: 10, height: 12)
         textView.textContainer?.lineFragmentPadding = 0
         textView.onPrimary = onTextPrimary

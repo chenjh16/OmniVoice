@@ -306,6 +306,7 @@ public final class ActionPanelController {
         backgroundView?.statusTone = status
         surfaceShadowView?.surface = surface
         surfaceShadowView?.status = status
+        applyTypography(for: surface)
         let textTone: HUDTextTone
         let textShadow: NSShadow?
         if surface == .nativeGlass, let backgroundView {
@@ -356,12 +357,24 @@ public final class ActionPanelController {
                     appearance: glassAppearance(for: backgroundView.effectiveAppearance),
                     status: status
                 )
-                button?.glassTextHaloColor = textHaloColor(for: textTone, alpha: readability.haloAlpha * 0.72)
-                button?.glassTextHaloWidth = readability.haloWidth * 0.84
+                button?.glassTextHaloColor = textHaloColor(
+                    for: textTone,
+                    alpha: readability.haloAlpha * GlassTypography.panelButtonHaloAlphaScale
+                )
+                button?.glassTextHaloWidth = readability.haloWidth * GlassTypography.panelButtonHaloWidthScale
             } else {
                 button?.glassTextHaloColor = nil
                 button?.glassTextHaloWidth = 0
             }
+        }
+    }
+
+    private func applyTypography(for surface: HUDResolvedSurface) {
+        titleLabel?.font = GlassTypography.actionPanelTitleFont(for: surface)
+        textView?.font = GlassTypography.actionPanelBodyFont(for: surface)
+        for button in [primaryButton, secondaryButton, tertiaryButton] {
+            button?.font = GlassTypography.actionPanelButtonFont(for: surface)
+            button?.shortcutFont = GlassTypography.actionPanelShortcutFont(for: surface)
         }
     }
 

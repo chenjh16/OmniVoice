@@ -272,6 +272,18 @@ struct HUDAndActionPanelTests {
         #expect(NativeGlassSurfaceStyle.innerRimAlpha(status: .warning) == 0.24)
         #expect(NativeGlassSurfaceStyle.overlayColor(status: .normal, readability: lightGlass).alphaComponent == lightGlass.scrimAlpha)
         #expect(NativeGlassSurfaceStyle.overlayColor(status: .warning, readability: warningGlass).alphaComponent == warningGlass.scrimAlpha)
+        #expect(
+            GlassTypography.compactWeight(for: .nativeGlass).rawValue
+                > GlassTypography.compactWeight(for: .darkCapsule).rawValue
+        )
+        #expect(
+            GlassTypography.panelWeight(for: .nativeGlass).rawValue
+                > GlassTypography.panelWeight(for: .lightCapsule).rawValue
+        )
+        #expect(GlassTypography.hudTextFont(for: .nativeGlass).fontDescriptor.pointSize == 12.5)
+        #expect(GlassTypography.actionPanelTitleFont(for: .nativeGlass).fontDescriptor.pointSize == 14.5)
+        #expect(GlassTypography.panelButtonHaloAlphaScale >= 0.90)
+        #expect(GlassTypography.panelButtonHaloWidthScale == 1.0)
         #expect(!ActionPanelContentTransparencyPolicy.scrollViewDrawsBackground)
         #expect(!ActionPanelContentTransparencyPolicy.clipViewDrawsBackground)
         #expect(!ActionPanelContentTransparencyPolicy.textViewDrawsBackground)

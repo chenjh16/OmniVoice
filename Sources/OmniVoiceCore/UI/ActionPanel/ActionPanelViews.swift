@@ -261,13 +261,17 @@ final class ThemedPanelButton: NSButton {
         didSet { needsDisplay = true }
     }
 
+    var shortcutFont: NSFont = GlassTypography.actionPanelShortcutFont(for: .darkCapsule) {
+        didSet { needsDisplay = true }
+    }
+
     init(role: VisualRole) {
         self.visualRole = role
         super.init(frame: .zero)
         isBordered = false
         focusRingType = .none
         setButtonType(.momentaryChange)
-        font = .systemFont(ofSize: 13, weight: .semibold)
+        font = GlassTypography.actionPanelButtonFont(for: .darkCapsule)
         lineBreakMode = .byTruncatingTail
     }
 
@@ -303,7 +307,7 @@ final class ThemedPanelButton: NSButton {
         shortcutParagraph.alignment = .center
         shortcutParagraph.lineBreakMode = .byClipping
         let shortcutAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9.5, weight: .semibold),
+            .font: shortcutFont,
             .foregroundColor: colors.text.withAlphaComponent(0.72),
             .paragraphStyle: shortcutParagraph
         ]

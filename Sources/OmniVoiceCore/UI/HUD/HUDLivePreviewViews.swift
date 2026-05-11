@@ -190,11 +190,16 @@ final class DraftBadgeView: NSView {
         didSet { needsDisplay = true }
     }
 
-    private let badgeFont = NSFont.systemFont(ofSize: HUDDraftBadgeMetrics.fontSize, weight: .semibold)
+    var font: NSFont = GlassTypography.hudBadgeFont(for: .darkCapsule) {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
 
     override var intrinsicContentSize: NSSize {
         NSSize(
-            width: HUDDraftBadgeMetrics.width(for: text, font: badgeFont),
+            width: HUDDraftBadgeMetrics.width(for: text, font: font),
             height: HUDDraftBadgeMetrics.height
         )
     }
@@ -236,7 +241,7 @@ final class DraftBadgeView: NSView {
 
     private func attributedText(paragraph: NSParagraphStyle) -> NSAttributedString {
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: badgeFont,
+            .font: font,
             .foregroundColor: textColor,
             .paragraphStyle: paragraph
         ]

@@ -61,6 +61,43 @@ enum GlassTextReadabilityRenderer {
     }
 }
 
+enum GlassTypography {
+    static func hudTextFont(for surface: HUDResolvedSurface) -> NSFont {
+        .systemFont(ofSize: 12.5, weight: compactWeight(for: surface))
+    }
+
+    static func hudBadgeFont(for surface: HUDResolvedSurface) -> NSFont {
+        .systemFont(ofSize: HUDDraftBadgeMetrics.fontSize, weight: compactWeight(for: surface))
+    }
+
+    static func actionPanelTitleFont(for surface: HUDResolvedSurface) -> NSFont {
+        .systemFont(ofSize: 14.5, weight: panelWeight(for: surface))
+    }
+
+    static func actionPanelBodyFont(for surface: HUDResolvedSurface) -> NSFont {
+        .systemFont(ofSize: 14, weight: panelWeight(for: surface))
+    }
+
+    static func actionPanelButtonFont(for surface: HUDResolvedSurface) -> NSFont {
+        .systemFont(ofSize: 13, weight: panelWeight(for: surface))
+    }
+
+    static func actionPanelShortcutFont(for surface: HUDResolvedSurface) -> NSFont {
+        .systemFont(ofSize: 9.5, weight: compactWeight(for: surface))
+    }
+
+    static func compactWeight(for surface: HUDResolvedSurface) -> NSFont.Weight {
+        surface == .nativeGlass ? .bold : .semibold
+    }
+
+    static func panelWeight(for surface: HUDResolvedSurface) -> NSFont.Weight {
+        surface == .nativeGlass ? .bold : .semibold
+    }
+
+    static let panelButtonHaloAlphaScale: CGFloat = 0.90
+    static let panelButtonHaloWidthScale: CGFloat = 1.0
+}
+
 final class HaloTextField: NSTextField {
     var textHaloColor: NSColor? {
         didSet { needsDisplay = true }

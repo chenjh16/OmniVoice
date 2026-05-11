@@ -49,7 +49,7 @@ public final class DictationHUDController {
         shadowView.translatesAutoresizingMaskIntoConstraints = false
         capsuleView.translatesAutoresizingMaskIntoConstraints = false
 
-        label.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        label.font = GlassTypography.hudTextFont(for: .darkCapsule)
         label.textColor = NSColor.white.withAlphaComponent(0.96)
         label.alignment = .center
         label.lineBreakMode = .byTruncatingMiddle
@@ -60,7 +60,7 @@ public final class DictationHUDController {
         previewBadge.setContentHuggingPriority(.required, for: .horizontal)
         previewBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        previewTextView.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        previewTextView.font = GlassTypography.hudTextFont(for: .darkCapsule)
         previewTextView.translatesAutoresizingMaskIntoConstraints = false
         previewTextView.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -426,7 +426,7 @@ public final class DictationHUDController {
     private func previewLayout(text: String, badge: String, includesWaveform: Bool) -> HUDLivePreviewLayout {
         let textFont = previewTextView.font
         let measuredText = (text as NSString).size(withAttributes: [.font: textFont]).width
-        let measuredBadge = badge.isEmpty ? 0 : HUDDraftBadgeMetrics.width(for: badge)
+        let measuredBadge = badge.isEmpty ? 0 : HUDDraftBadgeMetrics.width(for: badge, font: previewBadge.font)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         return HUDLivePreviewLayoutPlanner.layout(
             measuredTextWidth: measuredText,
@@ -473,6 +473,7 @@ public final class DictationHUDController {
     private func applyPalette() {
         let tone: HUDStatusTone = capsuleView.statusStyle == .warning ? .warning : .normal
         shadowView.status = tone
+        applyTypography(for: capsuleView.surface)
         if capsuleView.surface == .nativeGlass {
             let readability = GlassReadabilityResolver.resolve(
                 appearance: glassAppearance(for: capsuleView.effectiveAppearance),
@@ -497,6 +498,12 @@ public final class DictationHUDController {
             ? .light(warning: palette.warning)
             : .dark(warning: palette.warning)
         waveformView.palette = palette.textTone == .light ? .light : .dark
+    }
+
+    private func applyTypography(for surface: HUDResolvedSurface) {
+        label.font = GlassTypography.hudTextFont(for: surface)
+        previewTextView.font = GlassTypography.hudTextFont(for: surface)
+        previewBadge.font = GlassTypography.hudBadgeFont(for: surface)
     }
 
     private func applyTextTone(
