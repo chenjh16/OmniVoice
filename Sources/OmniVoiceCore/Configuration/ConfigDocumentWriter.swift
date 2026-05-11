@@ -1,130 +1,195 @@
 import Foundation
 
-public enum ConfigDocumentWriter {
-    public static func defaultDocument(uiLanguage: UILanguage) -> String {
-        document(config: defaultConfig(uiLanguage: uiLanguage), uiLanguage: uiLanguage)
+enum ConfigDocumentWriter {
+    static func defaultDocument(uiLanguage: UILanguage) -> String {
+        document(config: DefaultConfigFactory.config(uiLanguage: uiLanguage), uiLanguage: uiLanguage)
     }
 
-    public static func document(config: MimoConfig, uiLanguage: UILanguage) -> String {
+    static func document(config: MimoConfig, uiLanguage: UILanguage) -> String {
         let text = ConfigDocumentText(language: uiLanguage)
         var lines: [String] = ["{"]
 
+        appendHeaderAndActiveSource(config, text: text, to: &lines)
+        appendPipeline(config, text: text, to: &lines)
+        appendModels(config, text: text, to: &lines)
+        appendSystemASR(config, text: text, to: &lines)
+        appendSources(config, text: text, to: &lines)
+        appendLatency(config, text: text, to: &lines)
+        appendPreferences(config, uiLanguage: uiLanguage, text: text, to: &lines)
+        appendCustomStyles(config, text: text, to: &lines)
+        appendKeywordGroups(config, text: text, to: &lines)
+        lines.append("}")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func appendHeaderAndActiveSource(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.fileIntro, indent: 2, to: &lines)
         addComment(text.activeSource, indent: 2, to: &lines)
-        lines.append("  \"active_source\": \(jsonString(config.activeSourceID)),")
+        lines.append("  \(jsonString(ConfigSchema.Root.activeSource)): \(jsonString(config.activeSourceID)),")
+    }
+
+    private static func appendPipeline(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.transcriptionPipeline, indent: 2, to: &lines)
-        lines.append("  \"transcription_pipeline\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.transcriptionPipeline)): {")
         addComment(text.transcriptionPipelineMode, indent: 4, to: &lines)
-        lines.append("    \"mode\": \(jsonString(config.pipelineMode.rawValue))")
+        lines.append("    \(jsonString(ConfigSchema.Pipeline.mode)): \(jsonString(config.pipelineMode.rawValue))")
         lines.append("  },")
+    }
+
+    private static func appendModels(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.models, indent: 2, to: &lines)
-        lines.append("  \"models\": {")
-        lines.append("    \"audio_llm\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.models)): {")
+        lines.append("    \(jsonString(ConfigSchema.Models.audioLLM)): {")
         addComment(text.inputAudioDefaultModel, indent: 6, to: &lines)
-        lines.append("      \"default_model\": \(jsonString(config.modelCatalogs.inputAudioDefaultModel.rawValue)),")
+        lines.append("      \(jsonString(ConfigSchema.Models.defaultModel)): \(jsonString(config.modelCatalogs.inputAudioDefaultModel.rawValue)),")
         addComment(text.inputAudioExtraModels, indent: 6, to: &lines)
         appendJSONStringArrayProperty(
-            name: "extra_models",
+            name: ConfigSchema.Models.extraModels,
             values: config.modelCatalogs.inputAudioExtraModels.map(\.rawValue),
             indent: 6,
             trailingComma: false,
             to: &lines
         )
         lines.append("    },")
-        lines.append("    \"text_llm\": {")
+        lines.append("    \(jsonString(ConfigSchema.Models.textLLM)): {")
         addComment(text.textLLMDefaultModel, indent: 6, to: &lines)
-        lines.append("      \"default_model\": \(jsonString(config.modelCatalogs.textLLMDefaultModel.rawValue))")
+        lines.append("      \(jsonString(ConfigSchema.Models.defaultModel)): \(jsonString(config.modelCatalogs.textLLMDefaultModel.rawValue))")
         lines.append("    }")
         lines.append("  },")
+    }
+
+    private static func appendSystemASR(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.systemASR, indent: 2, to: &lines)
-        lines.append("  \"system_asr\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.systemASR)): {")
         addComment(text.systemASREngine, indent: 4, to: &lines)
-        lines.append("    \"engine\": \(jsonString(config.systemASRSettings.engine.rawValue)),")
+        lines.append("    \(jsonString(ConfigSchema.SystemASR.engine)): \(jsonString(config.systemASRSettings.engine.rawValue)),")
         addComment(text.systemASRKeywordHints, indent: 4, to: &lines)
-        lines.append("    \"keyword_hints_enabled\": \(config.systemASRSettings.keywordHintsEnabled ? "true" : "false")")
+        lines.append("    \(jsonString(ConfigSchema.SystemASR.keywordHintsEnabled)): \(config.systemASRSettings.keywordHintsEnabled ? "true" : "false")")
         lines.append("  },")
+    }
+
+    private static func appendSources(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.sources, indent: 2, to: &lines)
-        lines.append("  \"sources\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.sources)): {")
         let sources = config.sources.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
         for (index, source) in sources.enumerated() {
             addComment(text.source(source.id), indent: 4, to: &lines)
             lines.append("    \(jsonString(source.id)): {")
             addComment(text.baseURL, indent: 6, to: &lines)
-            lines.append("      \"base_url\": \(jsonString(source.baseURL.absoluteString)),")
+            lines.append("      \(jsonString(ConfigSchema.Source.baseURL)): \(jsonString(source.baseURL.absoluteString)),")
             addComment(text.apiKey, indent: 6, to: &lines)
-            lines.append("      \"api_key\": \(jsonString(source.apiKey ?? ""))")
+            lines.append("      \(jsonString(ConfigSchema.Source.apiKey)): \(jsonString(source.apiKey ?? ""))")
             lines.append("    }\(index == sources.count - 1 ? "" : ",")")
         }
         lines.append("  },")
+    }
 
+    private static func appendLatency(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.latency, indent: 2, to: &lines)
-        lines.append("  \"latency\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.latency)): {")
         addComment(text.latencyEnabled, indent: 4, to: &lines)
-        lines.append("    \"enabled\": \(config.latencySettings.interval == .off ? "false" : "true"),")
+        lines.append("    \(jsonString(ConfigSchema.Latency.enabled)): \(config.latencySettings.interval == .off ? "false" : "true"),")
         addComment(text.latencyInterval, indent: 4, to: &lines)
         if let seconds = config.latencySettings.interval.seconds {
-            lines.append("    \"interval_seconds\": \(seconds)")
+            lines.append("    \(jsonString(ConfigSchema.Latency.intervalSeconds)): \(seconds)")
         } else {
-            lines.append("    \"interval_seconds\": null")
+            lines.append("    \(jsonString(ConfigSchema.Latency.intervalSeconds)): null")
         }
         lines.append("  },")
+    }
 
+    private static func appendPreferences(
+        _ config: MimoConfig,
+        uiLanguage: UILanguage,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         let preferences = config.preferences.with(selectedModel: config.modelCatalogs.inputAudioDefaultModel, uiLanguage: uiLanguage)
         addComment(text.preferences, indent: 2, to: &lines)
-        lines.append("  \"preferences\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.preferences)): {")
         addComment(text.uiLanguage, indent: 4, to: &lines)
-        lines.append("    \"ui_language\": \(jsonString(preferences.uiLanguage.rawValue)),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.uiLanguage)): \(jsonString(preferences.uiLanguage.rawValue)),")
         addComment(text.transcriptionStyle, indent: 4, to: &lines)
-        lines.append("    \"transcription_style\": \(jsonString(preferences.transcriptionStyleSelection.rawValue)),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.transcriptionStyle)): \(jsonString(preferences.transcriptionStyleSelection.rawValue)),")
         addComment(text.keywordHintsEnabled, indent: 4, to: &lines)
-        lines.append("    \"keyword_hints_enabled\": \(preferences.keywordHintsEnabled ? "true" : "false"),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.keywordHintsEnabled)): \(preferences.keywordHintsEnabled ? "true" : "false"),")
         addComment(text.enabledKeywordGroups, indent: 4, to: &lines)
         appendJSONStringArrayProperty(
-            name: "enabled_keyword_groups",
+            name: ConfigSchema.Preferences.enabledKeywordGroups,
             values: preferences.enabledKeywordGroupIDs,
             indent: 4,
             trailingComma: true,
             to: &lines
         )
         addComment(text.triggerKey, indent: 4, to: &lines)
-        lines.append("    \"trigger_key\": \(jsonString(preferences.triggerKey.identifier)),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.triggerKey)): \(jsonString(preferences.triggerKey.identifier)),")
         addComment(text.continuousRecordingDoubleTap, indent: 4, to: &lines)
-        lines.append("    \"trigger\": {")
-        lines.append("      \"continuous_recording_double_tap_enabled\": \(preferences.continuousRecordingDoubleTapEnabled ? "true" : "false")")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.trigger)): {")
+        lines.append("      \(jsonString(ConfigSchema.Trigger.continuousRecordingDoubleTapEnabled)): \(preferences.continuousRecordingDoubleTapEnabled ? "true" : "false")")
         lines.append("    },")
         addComment(text.minRecording, indent: 4, to: &lines)
-        lines.append("    \"min_recording_duration_ms\": \(preferences.minRecordingDuration.rawValue),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.minRecordingDurationMS)): \(preferences.minRecordingDuration.rawValue),")
         addComment(text.maxRecording, indent: 4, to: &lines)
-        lines.append("    \"max_recording_duration_seconds\": \(preferences.maxRecordingDuration.rawValue),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.maxRecordingDurationSeconds)): \(preferences.maxRecordingDuration.rawValue),")
         addComment(text.autoInsert, indent: 4, to: &lines)
-        lines.append("    \"auto_insert\": \(preferences.autoInsert ? "true" : "false"),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.autoInsert)): \(preferences.autoInsert ? "true" : "false"),")
         addComment(text.launchAtLogin, indent: 4, to: &lines)
-        lines.append("    \"launch_at_login\": \(preferences.launchAtLogin ? "true" : "false"),")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.launchAtLogin)): \(preferences.launchAtLogin ? "true" : "false"),")
         addComment(text.hud, indent: 4, to: &lines)
-        lines.append("    \"hud\": {")
+        lines.append("    \(jsonString(ConfigSchema.Preferences.hud)): {")
         addComment(text.hudVisualStyle, indent: 6, to: &lines)
-        lines.append("      \"visual_style\": \(jsonString(preferences.hudVisualStyle.rawValue)),")
+        lines.append("      \(jsonString(ConfigSchema.HUD.visualStyle)): \(jsonString(preferences.hudVisualStyle.rawValue)),")
         addComment(text.hudMessageDuration, indent: 6, to: &lines)
-        lines.append("      \"message_duration_seconds\": \(preferences.hudMessageDuration.rawValue),")
+        lines.append("      \(jsonString(ConfigSchema.HUD.messageDurationSeconds)): \(preferences.hudMessageDuration.rawValue),")
         addComment(text.hudRevealDelay, indent: 6, to: &lines)
-        lines.append("      \"reveal_delay_ms\": \(preferences.hudRevealDelay.rawValue),")
+        lines.append("      \(jsonString(ConfigSchema.HUD.revealDelayMS)): \(preferences.hudRevealDelay.rawValue),")
         addComment(text.liveASRPreview, indent: 6, to: &lines)
-        lines.append("      \"live_asr_preview_enabled\": \(preferences.liveASRPreviewEnabled ? "true" : "false")")
+        lines.append("      \(jsonString(ConfigSchema.HUD.liveASRPreviewEnabled)): \(preferences.liveASRPreviewEnabled ? "true" : "false")")
         lines.append("    }")
         lines.append("  },")
+    }
 
+    private static func appendCustomStyles(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.customStyles, indent: 2, to: &lines)
-        lines.append("  \"custom_styles\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.customStyles)): {")
         let styles = config.customStyles.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
         for (index, style) in styles.enumerated() {
             addComment(text.customStyle(style.id), indent: 4, to: &lines)
             lines.append("    \(jsonString(style.id)): {")
             addComment(text.customDisplayName, indent: 6, to: &lines)
-            lines.append("      \"display_name\": \(jsonString(style.displayName)),")
+            lines.append("      \(jsonString(ConfigSchema.CustomStyle.displayName)): \(jsonString(style.displayName)),")
             addComment(text.customPromptLines, indent: 6, to: &lines)
             let promptLines = style.prompt.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             appendJSONStringArrayProperty(
-                name: "prompt_lines",
+                name: ConfigSchema.CustomStyle.promptLines,
                 values: promptLines,
                 indent: 6,
                 trailingComma: false,
@@ -133,18 +198,24 @@ public enum ConfigDocumentWriter {
             lines.append("    }\(index == styles.count - 1 ? "" : ",")")
         }
         lines.append("  },")
+    }
 
+    private static func appendKeywordGroups(
+        _ config: MimoConfig,
+        text: ConfigDocumentText,
+        to lines: inout [String]
+    ) {
         addComment(text.keywordGroups, indent: 2, to: &lines)
-        lines.append("  \"keyword_groups\": {")
+        lines.append("  \(jsonString(ConfigSchema.Root.keywordGroups)): {")
         let keywordGroups = config.keywordGroups.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
         for (index, group) in keywordGroups.enumerated() {
             addComment(text.keywordGroup(group.id), indent: 4, to: &lines)
             lines.append("    \(jsonString(group.id)): {")
             addComment(text.keywordDisplayName, indent: 6, to: &lines)
-            lines.append("      \"display_name\": \(jsonString(group.displayName ?? group.id)),")
+            lines.append("      \(jsonString(ConfigSchema.KeywordGroup.displayName)): \(jsonString(group.displayName ?? group.id)),")
             addComment(text.keywords, indent: 6, to: &lines)
             appendJSONStringArrayProperty(
-                name: "keywords",
+                name: ConfigSchema.KeywordGroup.keywords,
                 values: group.keywords,
                 indent: 6,
                 trailingComma: false,
@@ -153,149 +224,6 @@ public enum ConfigDocumentWriter {
             lines.append("    }\(index == keywordGroups.count - 1 ? "" : ",")")
         }
         lines.append("  }")
-        lines.append("}")
-        return lines.joined(separator: "\n") + "\n"
-    }
-
-    private static func defaultConfig(uiLanguage: UILanguage) -> MimoConfig {
-        let cnSource = MimoConfigSource(
-            id: "cn",
-            baseURL: MimoConfig.defaultBaseURL,
-            apiKey: ""
-        )
-        let sgpSource = MimoConfigSource(
-            id: "sgp",
-            baseURL: URL(string: "https://token-plan-sgp.xiaomimimo.com")!,
-            apiKey: ""
-        )
-        return MimoConfig(
-            baseURL: cnSource.baseURL,
-            apiKey: nil,
-            defaultModel: .defaultModel,
-            source: .configFile,
-            activeSourceID: cnSource.id,
-            resolvedSourceID: cnSource.id,
-            sources: [cnSource, sgpSource],
-            modelCatalogs: .defaultCatalogs,
-            pipelineMode: .defaultMode,
-            systemASRSettings: .defaultSettings,
-            customStyles: [defaultCustomStyle(uiLanguage: uiLanguage)],
-            keywordGroups: defaultKeywordGroups(uiLanguage: uiLanguage),
-            latencySettings: .defaultSettings,
-            preferences: .defaultPreferences(selectedModel: .defaultModel, uiLanguage: uiLanguage)
-        )
-    }
-
-    private static func defaultKeywordGroups(uiLanguage: UILanguage) -> [KeywordGroup] {
-        let llmGroup = KeywordGroup(
-            id: "llm_model_terms",
-            displayName: uiLanguage == .chinese ? "大模型与模型公司" : "LLM Models and Companies",
-            keywords: llmModelKeywords
-        )
-        switch uiLanguage {
-        case .chinese:
-            return [
-                KeywordGroup(
-                    id: "mimo_e2e_terms",
-                    displayName: "MiMo E2E Terms",
-                    keywords: ["OmniVoice", "MiMo", "mimo-v2.5", "mimo-v2-omni", "mimo-v2-pro", "mimo-v2.5-pro", "config.jsonc", "Swift", "API"]
-                ),
-                KeywordGroup(
-                    id: "omnivoice_terms",
-                    displayName: "OmniVoice 术语",
-                    keywords: ["OmniVoice", "MiMo", "mimo-v2.5", "mimo-v2-omni", "mimo-v2-pro", "mimo-v2.5-pro", "config.jsonc", "ActionPanel", "HUD", "Panel"]
-                ),
-                KeywordGroup(
-                    id: "technical_terms",
-                    displayName: "技术术语",
-                    keywords: ["Swift", "AppKit", "macOS", "JSONC", "API", "make run", "Cmd+V", "Fn"]
-                ),
-                llmGroup
-            ]
-        case .english:
-            return [
-                KeywordGroup(
-                    id: "mimo_e2e_terms",
-                    displayName: "MiMo E2E Terms",
-                    keywords: ["OmniVoice", "MiMo", "mimo-v2.5", "mimo-v2-omni", "mimo-v2-pro", "mimo-v2.5-pro", "config.jsonc", "Swift", "API"]
-                ),
-                KeywordGroup(
-                    id: "omnivoice_terms",
-                    displayName: "OmniVoice Terms",
-                    keywords: ["OmniVoice", "MiMo", "mimo-v2.5", "mimo-v2-omni", "mimo-v2-pro", "mimo-v2.5-pro", "config.jsonc", "ActionPanel", "HUD", "Panel"]
-                ),
-                KeywordGroup(
-                    id: "technical_terms",
-                    displayName: "Technical Terms",
-                    keywords: ["Swift", "AppKit", "macOS", "JSONC", "API", "make run", "Cmd+V", "Fn"]
-                ),
-                llmGroup
-            ]
-        }
-    }
-
-    private static let llmModelKeywords = [
-        "OpenAI",
-        "ChatGPT",
-        "GPT",
-        "Anthropic",
-        "Claude",
-        "Claude Code",
-        "Opus",
-        "Sonnet",
-        "Haiku",
-        "Google",
-        "Gemini",
-        "Gemma",
-        "Llama",
-        "Mistral",
-        "xAI",
-        "Grok",
-        "Qwen",
-        "Qwen3",
-        "Qwen3.5",
-        "Qwen3.6",
-        "Qwen Omni",
-        "DeepSeek",
-        "Kimi",
-        "MiniMax",
-        "Zhipu AI",
-        "智谱",
-        "GLM",
-        "Hunyuan",
-        "StepFun",
-        "阶跃星辰",
-        "SenseNova",
-        "Hermes",
-        "OpenClaw",
-        "Hugging Face"
-    ]
-
-    private static func defaultCustomStyle(uiLanguage: UILanguage) -> CustomTranscriptionStyle {
-        switch uiLanguage {
-        case .chinese:
-            return CustomTranscriptionStyle(
-                id: "meeting_notes",
-                displayName: "Meeting Notes",
-                prompt: [
-                    "请把这段音频整理成简洁会议纪要。",
-                    "保留明确说出的决定、待办、时间、人名、项目名和技术词。",
-                    "如果有多个要点，使用简短的换行列表。",
-                    "不要新增用户没有说出的事实、结论、负责人或截止日期。"
-                ].joined(separator: "\n")
-            )
-        case .english:
-            return CustomTranscriptionStyle(
-                id: "meeting_notes",
-                displayName: "Meeting Notes",
-                prompt: [
-                    "Turn this audio into concise meeting notes.",
-                    "Preserve explicitly spoken decisions, todos, times, names, project names, and technical terms.",
-                    "Use a short line-by-line list when there are multiple points.",
-                    "Do not add facts, conclusions, owners, or deadlines that the user did not say."
-                ].joined(separator: "\n")
-            )
-        }
     }
 
     private static func addComment(_ comment: [String], indent: Int, to lines: inout [String]) {

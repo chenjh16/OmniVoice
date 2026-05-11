@@ -86,18 +86,10 @@ public final class TriggerCaptureController: @unchecked Sendable {
     private let lock = NSLock()
     private lazy var eventTapRunLoop = EventTapRunLoopController(name: "OmniVoice Trigger Capture Tap") { [weak self] in
         guard let self else { return nil }
-        let mask =
-            CGEventMask(1 << CGEventType.keyDown.rawValue) |
-            CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
-            CGEventMask(1 << EventTapEventTypes.systemDefined.rawValue)
-        let userInfo = Unmanaged.passUnretained(self).toOpaque()
-        return CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
+        return EventTapFactory.create(
+            owner: self,
+            events: [.keyDown, .flagsChanged, EventTapEventTypes.systemDefined],
             callback: triggerCaptureEventTapCallback,
-            userInfo: userInfo
         )
     }
 
@@ -128,18 +120,14 @@ public final class TriggerCaptureController: @unchecked Sendable {
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             post(.failed)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.eventTapRunLoop.stop()
-            }
+            EventTapFactory.stopAsync(eventTapRunLoop)
             return Unmanaged.passUnretained(event)
         }
 
         let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
         if FnEscapeRescueDetector.shouldRescue(type: type, keyCode: keyCode, flags: event.flags) {
             post(.emergencyRescue)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.eventTapRunLoop.stop()
-            }
+            EventTapFactory.stopAsync(eventTapRunLoop)
             return Unmanaged.passUnretained(event)
         }
 
@@ -185,12 +173,4 @@ private let triggerCaptureEventTapCallback: CGEventTapCallBack = { _, type, even
     }
     let controller = Unmanaged<TriggerCaptureController>.fromOpaque(userInfo).takeUnretainedValue()
     return controller.handle(type: type, event: event)
-}
-
-private extension NSLock {
-    func withCaptureLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
-    }
 }

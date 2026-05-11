@@ -63,8 +63,6 @@ final class ActionPanelBackgroundView: NSView {
         }
     }
 
-    private var nativeGlassView: NSView?
-    private var nativeGlassScrimView: GlassScrimView?
     var onEffectiveAppearanceChanged: (() -> Void)?
     var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal, role: .actionPanel) {
         didSet {
@@ -75,44 +73,21 @@ final class ActionPanelBackgroundView: NSView {
 
     override var isFlipped: Bool { true }
 
+    private lazy var nativeGlassBackplate = NativeGlassBackplate(owner: self)
+    private var nativeGlassDescriptor: NativeGlassBackplateDescriptor {
+        NativeGlassBackplateDescriptor(
+            surface: surface,
+            role: .actionPanel,
+            status: statusTone,
+            readability: glassReadability,
+            cornerRadius: cornerRadius
+        )
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let radius = min(cornerRadius, min(bounds.width, bounds.height) / 2)
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
-        let fillColors: [NSColor]? = switch (surface, statusTone) {
-        case (.darkCapsule, .normal):
-            [
-                NSColor(calibratedRed: 0.050, green: 0.056, blue: 0.068, alpha: 0.99),
-                NSColor(calibratedRed: 0.020, green: 0.023, blue: 0.030, alpha: 0.99)
-            ]
-        case (.darkCapsule, .warning):
-            [
-                NSColor(calibratedRed: 0.270, green: 0.135, blue: 0.072, alpha: 0.99),
-                NSColor(calibratedRed: 0.135, green: 0.060, blue: 0.032, alpha: 0.99)
-            ]
-        case (.lightCapsule, .normal):
-            [
-                NSColor(calibratedRed: 0.988, green: 0.978, blue: 0.952, alpha: 0.985),
-                NSColor(calibratedRed: 0.950, green: 0.940, blue: 0.915, alpha: 0.970)
-            ]
-        case (.lightCapsule, .warning):
-            [
-                NSColor(calibratedRed: 1.0, green: 0.895, blue: 0.765, alpha: 0.985),
-                NSColor(calibratedRed: 0.970, green: 0.790, blue: 0.585, alpha: 0.965)
-            ]
-        case (.fallbackGlass, .normal):
-            [
-                NSColor(calibratedWhite: 1.0, alpha: 0.50),
-                NSColor(calibratedWhite: 0.92, alpha: 0.36)
-            ]
-        case (.fallbackGlass, .warning):
-            [
-                NSColor(calibratedRed: 1.0, green: 0.84, blue: 0.68, alpha: 0.58),
-                NSColor(calibratedRed: 0.95, green: 0.66, blue: 0.44, alpha: 0.42)
-            ]
-        case (.nativeGlass, _):
-            nil
-        }
-        if let fillColors {
+        if let fillColors = SurfaceThemeTokens.actionPanelFillColors(surface: surface, status: statusTone) {
             NSGradient(colors: fillColors)?.draw(in: path, angle: -90)
         }
 
@@ -122,22 +97,12 @@ final class ActionPanelBackgroundView: NSView {
                 xRadius: max(0, radius - 1.5),
                 yRadius: max(0, radius - 1.5)
             )
-            NSColor.white.withAlphaComponent(statusTone == .warning ? 0.055 : 0.045).setStroke()
+            SurfaceThemeTokens.innerStrokeColor(status: statusTone).setStroke()
             innerPath.lineWidth = 0.7
             innerPath.stroke()
         }
 
-        let strokeColor: NSColor = switch surface {
-        case .darkCapsule:
-            NSColor.white.withAlphaComponent(statusTone == .warning ? 0.23 : 0.16)
-        case .lightCapsule:
-            NSColor.black.withAlphaComponent(statusTone == .warning ? 0.18 : 0.12)
-        case .fallbackGlass, .nativeGlass:
-            surface == .nativeGlass
-                ? NSColor.white.withAlphaComponent(statusTone == .warning ? 0.34 : 0.28)
-                : NSColor.black.withAlphaComponent(statusTone == .warning ? 0.24 : 0.14)
-        }
-        strokeColor.setStroke()
+        SurfaceThemeTokens.surfaceStrokeColor(role: .actionPanel, surface: surface, status: statusTone).setStroke()
         path.lineWidth = surface == .nativeGlass ? 0.8 : 0.9
         path.stroke()
     }
@@ -153,73 +118,15 @@ final class ActionPanelBackgroundView: NSView {
     }
 
     private func updateNativeGlassAppearance() {
-        guard #available(macOS 26.0, *) else {
-            return
-        }
-        if let glass = nativeGlassView as? NSGlassEffectView {
-            glass.style = NativeGlassSurfaceStyle.glassStyle(role: .actionPanel, status: statusTone)
-            glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: statusTone, readability: glassReadability)
-            glass.alphaValue = 1
-        } else if let effect = nativeGlassView as? NSVisualEffectView {
-            effect.alphaValue = glassReadability.materialAlpha
-            effect.appearance = NSAppearance(named: .darkAqua)
-        }
-        applyLiquidGlassOverlay(to: nativeGlassScrimView)
+        nativeGlassBackplate.updateAppearance(nativeGlassDescriptor)
     }
 
     private func updateNativeGlassCornerRadius() {
-        if #available(macOS 26.0, *),
-           let glass = nativeGlassView as? NSGlassEffectView {
-            glass.cornerRadius = cornerRadius
-        } else if let effect = nativeGlassView as? NSVisualEffectView {
-            effect.layer?.cornerRadius = cornerRadius
-        }
-        nativeGlassScrimView?.cornerRadius = cornerRadius
+        nativeGlassBackplate.updateCornerRadius(nativeGlassDescriptor)
     }
 
     private func configureNativeGlassIfNeeded() {
-        nativeGlassView?.removeFromSuperview()
-        nativeGlassView = nil
-        nativeGlassScrimView?.removeFromSuperview()
-        nativeGlassScrimView = nil
-        guard surface == .nativeGlass,
-              #available(macOS 26.0, *) else {
-            return
-        }
-        let glass = NSGlassEffectView(frame: bounds)
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.cornerRadius = cornerRadius
-        glass.style = NativeGlassSurfaceStyle.glassStyle(role: .actionPanel, status: statusTone)
-        glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: statusTone, readability: glassReadability)
-        glass.alphaValue = 1
-        addSubview(glass, positioned: .below, relativeTo: nil)
-        NSLayoutConstraint.activate([
-            glass.leadingAnchor.constraint(equalTo: leadingAnchor),
-            glass.trailingAnchor.constraint(equalTo: trailingAnchor),
-            glass.topAnchor.constraint(equalTo: topAnchor),
-            glass.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-        let scrim = GlassScrimView()
-        scrim.translatesAutoresizingMaskIntoConstraints = false
-        scrim.cornerRadius = cornerRadius
-        applyLiquidGlassOverlay(to: scrim)
-        addSubview(scrim, positioned: .above, relativeTo: glass)
-        NSLayoutConstraint.activate([
-            scrim.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrim.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrim.topAnchor.constraint(equalTo: topAnchor),
-            scrim.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-        nativeGlassView = glass
-        nativeGlassScrimView = scrim
-    }
-
-    private func applyLiquidGlassOverlay(to scrim: GlassScrimView?) {
-        guard let scrim else { return }
-        scrim.color = NativeGlassSurfaceStyle.overlayColor(status: statusTone, readability: glassReadability)
-        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha(role: .actionPanel, status: statusTone)
-        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha(role: .actionPanel, status: statusTone)
-        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: statusTone, role: .actionPanel)
+        nativeGlassBackplate.configureIfNeeded(nativeGlassDescriptor)
     }
 }
 
@@ -383,64 +290,12 @@ final class ThemedPanelButton: NSButton {
     }
 
     private func palette() -> (fill: NSColor, stroke: NSColor, text: NSColor) {
-        let pressed = isHighlighted ? 0.12 : 0
-        if surface == .nativeGlass {
-            let text = textColor(for: glassTextTone)
-            switch visualRole {
-            case .primary:
-                return (
-                    statusTone == .warning
-                        ? NSColor(calibratedRed: 0.90 - pressed, green: 0.40, blue: 0.14, alpha: 0.88)
-                        : NSColor(calibratedRed: 0.12, green: 0.43 - pressed, blue: 0.90 - pressed, alpha: 0.82),
-                    text.withAlphaComponent(0.14),
-                    .white
-                )
-            case .secondary:
-                return (
-                    NSColor.black.withAlphaComponent(isHighlighted ? 0.20 : 0.13),
-                    NSColor.white.withAlphaComponent(0.22),
-                    text.withAlphaComponent(0.94)
-                )
-            }
-        }
-        let lightSurface = surface == .lightCapsule || surface == .fallbackGlass || surface == .nativeGlass
-        switch (visualRole, lightSurface, statusTone) {
-        case (.primary, false, .normal):
-            return (
-                NSColor(calibratedRed: 0.15, green: 0.47 - pressed, blue: 0.92 - pressed, alpha: 0.96),
-                NSColor.white.withAlphaComponent(0.22),
-                .white
-            )
-        case (.primary, false, .warning):
-            return (
-                NSColor(calibratedRed: 0.94 - pressed, green: 0.46 - pressed, blue: 0.20, alpha: 0.96),
-                NSColor.white.withAlphaComponent(0.22),
-                .white
-            )
-        case (.secondary, false, _):
-            return (
-                NSColor.white.withAlphaComponent(isHighlighted ? 0.18 : 0.11),
-                NSColor.white.withAlphaComponent(0.14),
-                NSColor.white.withAlphaComponent(0.92)
-            )
-        case (.primary, true, .normal):
-            return (
-                NSColor(calibratedRed: 0.12, green: 0.43 - pressed, blue: 0.90 - pressed, alpha: 0.88),
-                NSColor.black.withAlphaComponent(0.12),
-                .white
-            )
-        case (.primary, true, .warning):
-            return (
-                NSColor(calibratedRed: 0.86 - pressed, green: 0.36, blue: 0.10, alpha: 0.84),
-                NSColor.black.withAlphaComponent(0.14),
-                .white
-            )
-        case (.secondary, true, _):
-            return (
-                NSColor.black.withAlphaComponent(isHighlighted ? 0.12 : 0.07),
-                NSColor.black.withAlphaComponent(0.12),
-                NSColor(calibratedWhite: 0.10, alpha: 0.92)
-            )
-        }
+        SurfaceThemeTokens.actionPanelButtonPalette(
+            visualRole: visualRole,
+            surface: surface,
+            status: statusTone,
+            highlighted: isHighlighted,
+            glassTextTone: glassTextTone
+        )
     }
 }

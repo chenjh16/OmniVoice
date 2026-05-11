@@ -22,11 +22,12 @@ extension AppCoordinator {
         }
 
         return await withCheckedContinuation { continuation in
-            automationOptions = options
-            automationRecordingResult = nil
-            automationContinuation = continuation
+            automationRuntime.begin(
+                options: options,
+                continuation: continuation,
+                previousUILanguage: options.uiLanguage == nil ? nil : settings.uiLanguage
+            )
             if let uiLanguage = options.uiLanguage {
-                automationPreviousUILanguage = settings.uiLanguage
                 settings.uiLanguage = uiLanguage
             }
             let visualStyle = options.hudVisualStyle ?? settings.hudVisualStyle
@@ -70,10 +71,7 @@ extension AppCoordinator {
         if let previous = automationPreviousUILanguage {
             settings.uiLanguage = previous
         }
-        automationContinuation = nil
-        automationOptions = nil
-        automationRecordingResult = nil
-        automationPreviousUILanguage = nil
+        automationRuntime.clearSession()
         continuation.resume(returning: RecordingReplayAutomationResult(
             ok: ok,
             recordingSeconds: recording?.durationSeconds,
@@ -92,22 +90,19 @@ extension AppCoordinator {
     func startAutomationGUIFrameCaptureIfNeeded() {
         guard let options = automationOptions,
               options.recordGUIFrames,
-              automationGUIFrameTimer == nil else { return }
-        automationGUIFrameIndex = 0
+              automationRuntime.guiFrameTimer.timer == nil else { return }
+        automationRuntime.resetGUIFrameCapture()
         recordAutomationGUIFrame(stage: "gui_frame_start")
         let interval = max(1.0 / 30.0, min(options.guiFrameIntervalSeconds, 1.0))
-        automationGUIFrameTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.recordAutomationGUIFrame(stage: "gui_frame")
-            }
+        automationRuntime.guiFrameTimer.schedule(interval: interval, repeats: true) { [weak self] in
+            self?.recordAutomationGUIFrame(stage: "gui_frame")
         }
     }
 
     func stopAutomationGUIFrameCapture() {
-        guard automationGUIFrameTimer != nil || automationGUIFrameIndex > 0 else { return }
+        guard automationRuntime.guiFrameTimer.timer != nil || automationRuntime.guiFrameIndex > 0 else { return }
         recordAutomationGUIFrame(stage: "gui_frame_final")
-        automationGUIFrameTimer?.invalidate()
-        automationGUIFrameTimer = nil
+        automationRuntime.invalidateGUIFrameTimer()
     }
 
     func recordAutomationGUIFrame(stage: String) {
@@ -126,9 +121,9 @@ extension AppCoordinator {
             return
         }
         guard screenshotPNGData != nil else { return }
-        automationGUIFrameIndex += 1
+        automationRuntime.guiFrameIndex += 1
         var details = [
-            "frame_index": "\(automationGUIFrameIndex)",
+            "frame_index": "\(automationRuntime.guiFrameIndex)",
             "panel_type": snapshot.panelType,
             "level": snapshot.levelName,
             "is_visible": snapshot.isVisible ? "true" : "false"

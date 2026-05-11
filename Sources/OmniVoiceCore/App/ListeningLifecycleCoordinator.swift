@@ -10,8 +10,7 @@ final class ListeningLifecycleCoordinator {
 
     func stopAllFeatures() {
         let priorState = String(describing: coordinator.state)
-        coordinator.maxRecordingTimer?.invalidate()
-        coordinator.maxRecordingTimer = nil
+        coordinator.recordingTimingRuntime.maxRecordingTimer.cancel()
         coordinator.resetListeningHUDRevealState()
         let stopWasPending = coordinator.cancelPendingRecordingStop()
         coordinator.transcriptionTask?.cancel()
@@ -122,8 +121,7 @@ final class ListeningLifecycleCoordinator {
     }
 
     func enterPermissionBlockedStop(recordDiagnostic: Bool = true) {
-        coordinator.maxRecordingTimer?.invalidate()
-        coordinator.maxRecordingTimer = nil
+        coordinator.recordingTimingRuntime.maxRecordingTimer.cancel()
         coordinator.resetListeningHUDRevealState()
         let stopWasPending = coordinator.cancelPendingRecordingStop()
         coordinator.transcriptionTask?.cancel()

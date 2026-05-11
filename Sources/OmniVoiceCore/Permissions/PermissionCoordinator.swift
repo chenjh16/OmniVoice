@@ -70,8 +70,7 @@ final class PermissionCoordinator {
         let actions = PermissionGuidePlanner.actions(
             for: snapshot,
             hasRunStartupGuide: runState.hasRunForCurrentIdentity,
-            isManualRequest: isManualRequest,
-            requiresSpeechRecognition: coordinator.settings.pipelineMode.usesSystemASR
+            isManualRequest: isManualRequest
         )
         guard !actions.isEmpty else {
             let autoEnabled = coordinator.handlePermissionReadiness(snapshot)

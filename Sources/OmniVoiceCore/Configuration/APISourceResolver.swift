@@ -1,7 +1,7 @@
 import Foundation
 
-public enum APISourceResolver {
-    public static func resolvedSource(
+enum APISourceResolver {
+    static func resolvedSource(
         activeSourceID: String,
         sources: [MimoConfigSource],
         latencyResults: [String: SourceLatencyMeasurement],

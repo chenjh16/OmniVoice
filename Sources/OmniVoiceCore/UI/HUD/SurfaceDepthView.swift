@@ -1,44 +1,44 @@
 import AppKit
 
-public enum SurfaceDepthRole: Equatable, Sendable {
+enum SurfaceDepthRole: Equatable, Sendable {
     case hud
     case actionPanel
 }
 
-public struct SurfaceDepthInsets: Equatable, Sendable {
-    public let left: CGFloat
-    public let right: CGFloat
-    public let top: CGFloat
-    public let bottom: CGFloat
+struct SurfaceDepthInsets: Equatable, Sendable {
+    let left: CGFloat
+    let right: CGFloat
+    let top: CGFloat
+    let bottom: CGFloat
 
-    public init(left: CGFloat, right: CGFloat, top: CGFloat, bottom: CGFloat) {
+    init(left: CGFloat, right: CGFloat, top: CGFloat, bottom: CGFloat) {
         self.left = left
         self.right = right
         self.top = top
         self.bottom = bottom
     }
 
-    public init(horizontal: CGFloat, vertical: CGFloat) {
+    init(horizontal: CGFloat, vertical: CGFloat) {
         self.init(left: horizontal, right: horizontal, top: vertical, bottom: vertical)
     }
 
-    public var horizontal: CGFloat { left + right }
-    public var vertical: CGFloat { top + bottom }
+    var horizontal: CGFloat { left + right }
+    var vertical: CGFloat { top + bottom }
 }
 
-public struct SurfaceDepthParameters: Equatable, Sendable {
-    public let ambientAlpha: CGFloat
-    public let ambientBlur: CGFloat
-    public let dropAlpha: CGFloat
-    public let dropBlur: CGFloat
-    public let dropOffsetY: CGFloat
-    public let contactAlpha: CGFloat
-    public let contactBlur: CGFloat
-    public let contactOffsetY: CGFloat
-    public let rimAlpha: CGFloat
-    public let shadowSourceAlpha: CGFloat
+struct SurfaceDepthParameters: Equatable, Sendable {
+    let ambientAlpha: CGFloat
+    let ambientBlur: CGFloat
+    let dropAlpha: CGFloat
+    let dropBlur: CGFloat
+    let dropOffsetY: CGFloat
+    let contactAlpha: CGFloat
+    let contactBlur: CGFloat
+    let contactOffsetY: CGFloat
+    let rimAlpha: CGFloat
+    let shadowSourceAlpha: CGFloat
 
-    public var hasVisibleDepth: Bool {
+    var hasVisibleDepth: Bool {
         ambientAlpha > 0 || dropAlpha > 0 || contactAlpha > 0 || rimAlpha > 0
     }
 }
@@ -103,11 +103,11 @@ enum NativeGlassSurfaceStyle {
     }
 }
 
-public enum SurfaceDepthMetrics {
-    public static let hudInsets = SurfaceDepthInsets(left: 22, right: 22, top: 18, bottom: 28)
-    public static let actionPanelInsets = SurfaceDepthInsets(left: 48, right: 48, top: 40, bottom: 68)
+enum SurfaceDepthMetrics {
+    static let hudInsets = SurfaceDepthInsets(left: 22, right: 22, top: 18, bottom: 28)
+    static let actionPanelInsets = SurfaceDepthInsets(left: 48, right: 48, top: 40, bottom: 68)
 
-    public static func insets(for role: SurfaceDepthRole) -> SurfaceDepthInsets {
+    static func insets(for role: SurfaceDepthRole) -> SurfaceDepthInsets {
         switch role {
         case .hud:
             hudInsets
@@ -116,12 +116,12 @@ public enum SurfaceDepthMetrics {
         }
     }
 
-    public static func windowSize(forVisualSize size: CGSize, role: SurfaceDepthRole) -> CGSize {
+    static func windowSize(forVisualSize size: CGSize, role: SurfaceDepthRole) -> CGSize {
         let insets = insets(for: role)
         return CGSize(width: size.width + insets.horizontal, height: size.height + insets.vertical)
     }
 
-    public static func windowFrame(forVisualFrame frame: CGRect, role: SurfaceDepthRole) -> CGRect {
+    static func windowFrame(forVisualFrame frame: CGRect, role: SurfaceDepthRole) -> CGRect {
         let insets = insets(for: role)
         return CGRect(
             x: frame.minX - insets.left,
@@ -131,7 +131,7 @@ public enum SurfaceDepthMetrics {
         )
     }
 
-    public static func visualFrame(forWindowFrame frame: CGRect, role: SurfaceDepthRole) -> CGRect {
+    static func visualFrame(forWindowFrame frame: CGRect, role: SurfaceDepthRole) -> CGRect {
         let insets = insets(for: role)
         return CGRect(
             x: frame.minX + insets.left,
@@ -141,7 +141,7 @@ public enum SurfaceDepthMetrics {
         )
     }
 
-    public static func surfaceRect(in bounds: CGRect, role: SurfaceDepthRole) -> CGRect {
+    static func surfaceRect(in bounds: CGRect, role: SurfaceDepthRole) -> CGRect {
         let insets = insets(for: role)
         return CGRect(
             x: bounds.minX + insets.left,
@@ -151,7 +151,7 @@ public enum SurfaceDepthMetrics {
         )
     }
 
-    public static func parameters(
+    static func parameters(
         role: SurfaceDepthRole,
         surface: HUDResolvedSurface,
         status: HUDStatusTone

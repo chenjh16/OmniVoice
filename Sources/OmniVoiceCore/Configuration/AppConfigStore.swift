@@ -124,7 +124,6 @@ public final class AppConfigStore {
             textLLMDefaultModel: textLLMModel
         )
         replaceConfig(
-            defaultModel: catalogs.inputAudioDefaultModel,
             modelCatalogs: catalogs,
             pipelineMode: pipelineMode ?? config.pipelineMode,
             systemASRSettings: systemASRSettings ?? config.systemASRSettings,
@@ -133,29 +132,18 @@ public final class AppConfigStore {
     }
 
     private func replaceConfig(
-        defaultModel: AllowedSpeechModel? = nil,
         modelCatalogs: ModelCatalogs? = nil,
         pipelineMode: TranscriptionPipelineMode? = nil,
         systemASRSettings: SystemASRSettings? = nil,
         latencySettings: ConfigLatencySettings? = nil,
         preferences: ConfigPreferences? = nil
     ) {
-        config = MimoConfig(
-            baseURL: config.baseURL,
-            apiKey: config.apiKey,
-            defaultModel: defaultModel ?? config.defaultModel,
-            source: config.source,
-            activeSourceID: config.activeSourceID,
-            resolvedSourceID: config.resolvedSourceID,
-            sources: config.sources,
+        config = config.updating(
             modelCatalogs: modelCatalogs ?? config.modelCatalogs,
             pipelineMode: pipelineMode ?? config.pipelineMode,
             systemASRSettings: systemASRSettings ?? config.systemASRSettings,
-            customStyles: config.customStyles,
-            keywordGroups: config.keywordGroups,
             latencySettings: latencySettings ?? config.latencySettings,
-            preferences: preferences ?? config.preferences,
-            warnings: config.warnings
+            preferences: preferences ?? config.preferences
         )
     }
 }

@@ -23,7 +23,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
     }
 
     var isRunning: Bool {
-        lock.withRunLoopLock { eventTap != nil }
+        lock.withLock { eventTap != nil }
     }
 
     @discardableResult
@@ -33,7 +33,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
         let semaphore = DispatchSemaphore(value: 0)
         let resultLock = NSLock()
         var startResult = false
-        let generation = lock.withRunLoopLock { () -> Int in
+        let generation = lock.withLock { () -> Int in
             self.generation += 1
             return self.generation
         }
@@ -51,7 +51,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
                 }
                 guard let tap = self.makeTap(),
                       let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
-                    resultLock.withRunLoopLock {
+                    resultLock.withLock {
                         startResult = false
                     }
                     semaphore.signal()
@@ -60,7 +60,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
                 guard self.isCurrentGeneration(generation) else {
                     CGEvent.tapEnable(tap: tap, enable: false)
                     CFMachPortInvalidate(tap)
-                    resultLock.withRunLoopLock {
+                    resultLock.withLock {
                         startResult = false
                     }
                     semaphore.signal()
@@ -69,7 +69,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
 
                 CFRunLoopAddSource(currentRunLoop, source, .commonModes)
                 CGEvent.tapEnable(tap: tap, enable: true)
-                let stored = self.lock.withRunLoopLock { () -> Bool in
+                let stored = self.lock.withLock { () -> Bool in
                     guard self.generation == generation else { return false }
                     self.eventTap = tap
                     self.runLoopSource = source
@@ -80,13 +80,13 @@ final class EventTapRunLoopController: @unchecked Sendable {
                     CGEvent.tapEnable(tap: tap, enable: false)
                     CFRunLoopRemoveSource(currentRunLoop, source, .commonModes)
                     CFMachPortInvalidate(tap)
-                    resultLock.withRunLoopLock {
+                    resultLock.withLock {
                         startResult = false
                     }
                     semaphore.signal()
                     return
                 }
-                resultLock.withRunLoopLock {
+                resultLock.withLock {
                     startResult = true
                 }
                 semaphore.signal()
@@ -96,7 +96,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
                 CGEvent.tapEnable(tap: tap, enable: false)
                 CFRunLoopRemoveSource(currentRunLoop, source, .commonModes)
                 CFMachPortInvalidate(tap)
-                self.lock.withRunLoopLock {
+                self.lock.withLock {
                     if self.generation == generation, self.eventTap === tap {
                         self.eventTap = nil
                         self.runLoopSource = nil
@@ -107,7 +107,7 @@ final class EventTapRunLoopController: @unchecked Sendable {
             }
         }
         thread.name = name
-        lock.withRunLoopLock {
+        lock.withLock {
             self.thread = thread
         }
         thread.start()
@@ -115,11 +115,11 @@ final class EventTapRunLoopController: @unchecked Sendable {
             stop()
             return false
         }
-        return resultLock.withRunLoopLock { startResult }
+        return resultLock.withLock { startResult }
     }
 
     func stop() {
-        let snapshot = lock.withRunLoopLock { () -> (CFMachPort?, CFRunLoopSource?, CFRunLoop?, Thread?) in
+        let snapshot = lock.withLock { () -> (CFMachPort?, CFRunLoopSource?, CFRunLoop?, Thread?) in
             generation += 1
             let snapshot = (eventTap, runLoopSource, runLoop, thread)
             eventTap = nil
@@ -140,16 +140,8 @@ final class EventTapRunLoopController: @unchecked Sendable {
     }
 
     private func isCurrentGeneration(_ generation: Int) -> Bool {
-        lock.withRunLoopLock {
+        lock.withLock {
             self.generation == generation
         }
-    }
-}
-
-private extension NSLock {
-    func withRunLoopLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
     }
 }

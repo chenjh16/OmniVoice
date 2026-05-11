@@ -26,13 +26,9 @@ struct TriggerKeyTests {
         #expect(TriggerKey.captureCandidate(keyCode: nil, includesFunctionModifier: true) == .fnGlobe)
     }
     @Test
-    func settingsDefaultTriggerIsFnGlobe() {
-        let suiteName = "omnivoice-default-trigger-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let settings = SettingsStore(defaults: defaults)
-        #expect(settings.triggerKey == .fnGlobe)
+    func configDefaultTriggerIsFnGlobe() {
+        let preferences = ConfigPreferences.defaultPreferences(selectedModel: .defaultInputAudioModel)
+        #expect(preferences.triggerKey == .fnGlobe)
     }
 
     @Test

@@ -70,14 +70,11 @@ extension ConfigurationTests {
         #expect(englishTemplate.contains("Technical Terms"))
         #expect(englishTemplate.contains("LLM Models and Companies"))
 
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-source-name-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        let loader = ConfigLoader(configFileURL: configURL)
+        let fixture = try configFixture(slug: "omnivoice-source-name")
+        let loader = fixture.loader
         #expect(loader.createTemplateIfMissing(uiLanguage: .english))
-        #expect(FileManager.default.fileExists(atPath: configURL.path))
-        let rawTemplate = try String(contentsOf: configURL, encoding: .utf8)
+        #expect(FileManager.default.fileExists(atPath: fixture.configURL.path))
+        let rawTemplate = try String(contentsOf: fixture.configURL, encoding: .utf8)
         let data = try #require(JSONCNormalizer.normalize(rawTemplate).data(using: .utf8))
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(object["active_source"] as? String == "cn")

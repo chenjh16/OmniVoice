@@ -55,9 +55,11 @@ extension AppCoordinator {
             try recordingSource.start()
             recordLocalDiagnostic(stage: "recording_started", details: ["trigger": settings.triggerKey.identifier])
             scheduleListeningHUDReveal()
-            maxRecordingTimer?.invalidate()
-            maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.maxRecordingDuration.rawValue), repeats: false) { [weak self] _ in
-                Task { @MainActor in self?.finishRecordingAndTranscribe() }
+            recordingTimingRuntime.maxRecordingTimer.schedule(
+                interval: TimeInterval(settings.maxRecordingDuration.rawValue),
+                repeats: false
+            ) { [weak self] in
+                self?.finishRecordingAndTranscribe()
             }
             rebuildMenu()
         } catch {

@@ -37,11 +37,8 @@ extension ConfigurationTests {
     @MainActor
     @Test
     func appConfigStoreOwnsEffectiveConfigAndSerializesJSONC() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-config-store-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-config-store")
+        try fixture.write("""
         {
           "active_source": "cn",
           "sources": {
@@ -67,11 +64,10 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        """)
 
         let store = AppConfigStore(
-            loader: ConfigLoader(configFileURL: configURL),
+            loader: fixture.loader,
             initialUILanguage: .english
         )
         #expect(store.config.activeSourceID == "cn")
@@ -102,7 +98,7 @@ extension ConfigurationTests {
         #expect(store.config.pipelineMode == .systemASRTextLLM)
         #expect(store.config.systemASRSettings == SystemASRSettings(engine: .classicSpeech, keywordHintsEnabled: false))
 
-        let object = try jsoncObject(from: configURL)
+        let object = try fixture.object()
         let models = try #require(object["models"] as? [String: Any])
         let audioLLM = try #require(models["audio_llm"] as? [String: Any])
         let textLLM = try #require(models["text_llm"] as? [String: Any])
@@ -123,18 +119,15 @@ extension ConfigurationTests {
             uiLanguage: .english
         ))
         #expect(store.config.pipelineMode == .systemASROnly)
-        let systemOnlyObject = try jsoncObject(from: configURL)
+        let systemOnlyObject = try fixture.object()
         let systemOnlyPipeline = try #require(systemOnlyObject["transcription_pipeline"] as? [String: Any])
         #expect(systemOnlyPipeline["mode"] as? String == "system_asr_only")
     }
 
     @Test
     func configMenuStateWritesAnnotatedJSONCAndPreservesSupportedFields() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-save-config-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-save-config")
+        try fixture.write("""
         {
           "active_source": "primary",
           "transcription_pipeline": { "mode": "input_audio" },
@@ -196,10 +189,9 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: configURL.path)
+        """, permissions: 0o644)
 
-        let loader = ConfigLoader(configFileURL: configURL)
+        let loader = fixture.loader
         #expect(loader.saveActiveSource("backup"))
         #expect(loader.saveLatencyInterval(.startupOnly))
         let preferences = ConfigPreferences(
@@ -220,11 +212,11 @@ extension ConfigurationTests {
         )
         #expect(loader.savePreferences(preferences))
 
-        let data = try Data(contentsOf: configURL)
+        let data = try Data(contentsOf: fixture.configURL)
         let raw = try #require(String(data: data, encoding: .utf8))
         #expect(raw.contains("OmniVoice reads this file"))
         #expect(raw.contains("HUD visual style"))
-        let object = try jsoncObject(from: configURL)
+        let object = try fixture.object()
         #expect(object["default_model"] == nil)
         let models = try #require(object["models"] as? [String: Any])
         #expect(models["input_audio"] == nil)
@@ -276,7 +268,7 @@ extension ConfigurationTests {
         #expect(meetingTerms["display_name"] as? String == "Meeting Terms")
         #expect(meetingTerms["description"] == nil)
         #expect(meetingTerms["keywords"] as? [String] == ["OmniVoice", "MiMo"])
-        let permissions = try FileManager.default.attributesOfItem(atPath: configURL.path)[.posixPermissions] as? NSNumber
+        let permissions = try FileManager.default.attributesOfItem(atPath: fixture.configURL.path)[.posixPermissions] as? NSNumber
         #expect((permissions?.intValue ?? 0) & 0o777 == 0o600)
     }
 
@@ -307,21 +299,18 @@ extension ConfigurationTests {
 
     @Test
     func configWriterRewritesCommentLanguageFromPreferences() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-comment-language-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        let loader = ConfigLoader(configFileURL: configURL)
+        let fixture = try configFixture(slug: "omnivoice-comment-language")
+        let loader = fixture.loader
         _ = loader.ensureValidConfig(uiLanguage: .chinese)
-        var preferences = ConfigPreferences.defaultPreferences(selectedModel: .defaultModel, uiLanguage: .english)
+        var preferences = ConfigPreferences.defaultPreferences(selectedModel: .defaultInputAudioModel, uiLanguage: .english)
         #expect(loader.savePreferences(preferences))
-        var raw = try String(contentsOf: configURL, encoding: .utf8)
+        var raw = try String(contentsOf: fixture.configURL, encoding: .utf8)
         #expect(raw.contains("OmniVoice reads this file"))
         #expect(!raw.contains("OmniVoice 会读取"))
 
         preferences = preferences.with(uiLanguage: .chinese)
         #expect(loader.savePreferences(preferences))
-        raw = try String(contentsOf: configURL, encoding: .utf8)
+        raw = try String(contentsOf: fixture.configURL, encoding: .utf8)
         #expect(raw.contains("OmniVoice 会读取"))
         #expect(!raw.contains("OmniVoice reads this file"))
     }

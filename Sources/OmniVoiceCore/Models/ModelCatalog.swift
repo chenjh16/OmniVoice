@@ -40,14 +40,9 @@ public struct AllowedSpeechModel: RawRepresentable, Hashable, Codable, Sendable,
         "qwen3-omni-flash"
     ]
 
-    public static let builtinTextLLMModels: [AllowedSpeechModel] = [
-        .mimoV25
-    ]
-
     public static let defaultInputAudioModel: AllowedSpeechModel = .mimoV25
     public static let defaultAudioLLMModel: AllowedSpeechModel = .defaultInputAudioModel
     public static let defaultTextLLMModel: AllowedSpeechModel = .mimoV25
-    public static let defaultModel: AllowedSpeechModel = .defaultInputAudioModel
     public static let fallbackModel: AllowedSpeechModel = .mimoV25
 
     public static var allCases: [AllowedSpeechModel] {
@@ -78,7 +73,7 @@ public struct AllowedSpeechModel: RawRepresentable, Hashable, Codable, Sendable,
 
     public static func safeSelection(
         _ rawValue: String?,
-        fallback: AllowedSpeechModel = .defaultModel,
+        fallback: AllowedSpeechModel = .defaultInputAudioModel,
         catalog: [AllowedSpeechModel]? = nil
     ) -> AllowedSpeechModel {
         guard let rawValue, let model = AllowedSpeechModel(rawValue: rawValue) else { return fallback }
@@ -279,7 +274,7 @@ public enum ModelCapabilityHeuristics {
 }
 
 public enum ModelRequestProfile: String, Codable, Sendable {
-    case mimoInputAudio = "mimo_input_audio"
+    case mimoChat = "mimo_chat"
     case openAIInputAudio = "openai_input_audio"
     case geminiOpenAIInputAudio = "gemini_openai_input_audio"
     case qwenOmniInputAudio = "qwen_omni_input_audio"
@@ -287,18 +282,18 @@ public enum ModelRequestProfile: String, Codable, Sendable {
 
     public static func inputAudioProfile(for model: AllowedSpeechModel) -> ModelRequestProfile {
         let id = model.rawValue.lowercased()
-        if id.hasPrefix("mimo-") { return .mimoInputAudio }
+        if id.hasPrefix("mimo-") { return .mimoChat }
         if id.hasPrefix("gemini-") { return .geminiOpenAIInputAudio }
         if id.hasPrefix("qwen") { return .qwenOmniInputAudio }
         return .openAIInputAudio
     }
 
     public static func textProfile(for model: AllowedSpeechModel) -> ModelRequestProfile {
-        model.rawValue.lowercased().hasPrefix("mimo-") ? .mimoInputAudio : .openAITextChat
+        model.rawValue.lowercased().hasPrefix("mimo-") ? .mimoChat : .openAITextChat
     }
 
     public var sendsMimoThinkingDisabled: Bool {
-        self == .mimoInputAudio
+        self == .mimoChat
     }
 
     public var sendsTextModalities: Bool {

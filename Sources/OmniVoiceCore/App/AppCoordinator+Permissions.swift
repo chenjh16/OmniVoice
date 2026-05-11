@@ -3,31 +3,31 @@ import Foundation
 
 extension AppCoordinator {
     func stopAllFeatures() {
-        ListeningLifecycleCoordinator(coordinator: self).stopAllFeatures()
+        listeningLifecycleCoordinator.stopAllFeatures()
     }
 
     func reenable() {
-        ListeningLifecycleCoordinator(coordinator: self).reenable()
+        listeningLifecycleCoordinator.reenable()
     }
 
     @objc func requestAllPermissions() {
-        PermissionCoordinator(coordinator: self).requestAllPermissions()
+        permissionCoordinator.requestAllPermissions()
     }
 
     @objc func requestMicrophonePermission() {
-        PermissionCoordinator(coordinator: self).requestMicrophonePermission()
+        permissionCoordinator.requestMicrophonePermission()
     }
 
     @objc func requestAccessibilityPermission() {
-        PermissionCoordinator(coordinator: self).requestAccessibilityPermission()
+        permissionCoordinator.requestAccessibilityPermission()
     }
 
     @objc func requestInputMonitoringPermission() {
-        PermissionCoordinator(coordinator: self).requestInputMonitoringPermission()
+        permissionCoordinator.requestInputMonitoringPermission()
     }
 
     @objc func requestSpeechRecognitionPermission() {
-        PermissionCoordinator(coordinator: self).requestSpeechRecognitionPermission()
+        permissionCoordinator.requestSpeechRecognitionPermission()
     }
 
     @objc func openMicrophoneSettings() {
@@ -67,7 +67,7 @@ extension AppCoordinator {
     }
 
     func runStartupPermissionGuideIfNeeded() async {
-        await PermissionCoordinator(coordinator: self).runStartupPermissionGuideIfNeeded()
+        await permissionCoordinator.runStartupPermissionGuideIfNeeded()
     }
 
     func applyPersistedStoppedState() {
@@ -84,7 +84,7 @@ extension AppCoordinator {
     }
 
     func startListening(showFailureHUD: Bool = false) {
-        ListeningLifecycleCoordinator(coordinator: self).startListening(showFailureHUD: showFailureHUD)
+        listeningLifecycleCoordinator.startListening(showFailureHUD: showFailureHUD)
     }
 
     func normalizeHUDStyleAvailability() {
@@ -116,38 +116,32 @@ extension AppCoordinator {
     }
 
     func enterPermissionBlockedStop(recordDiagnostic: Bool = true) {
-        ListeningLifecycleCoordinator(coordinator: self).enterPermissionBlockedStop(recordDiagnostic: recordDiagnostic)
+        listeningLifecycleCoordinator.enterPermissionBlockedStop(recordDiagnostic: recordDiagnostic)
     }
 
     func schedulePermissionReadinessPollingIfNeeded() {
         guard stopReason == .permissionBlocked else { return }
-        guard permissionReadinessTimer == nil else { return }
-        permissionReadinessTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.pollPermissionReadiness()
-            }
+        guard permissionPollingRuntime.readinessTimer.timer == nil else { return }
+        let timer = permissionPollingRuntime.readinessTimer.schedule(interval: 1.5, repeats: true) { [weak self] in
+            self?.pollPermissionReadiness()
         }
-        permissionReadinessTimer?.tolerance = 0.3
+        timer.tolerance = 0.3
     }
 
     func stopPermissionReadinessPolling() {
-        permissionReadinessTimer?.invalidate()
-        permissionReadinessTimer = nil
+        permissionPollingRuntime.readinessTimer.cancel()
     }
 
     func schedulePermissionDriftMonitoringIfNeeded() {
-        guard permissionDriftTimer == nil else { return }
-        permissionDriftTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.pollPermissionDrift()
-            }
+        guard permissionPollingRuntime.driftTimer.timer == nil else { return }
+        let timer = permissionPollingRuntime.driftTimer.schedule(interval: 2.0, repeats: true) { [weak self] in
+            self?.pollPermissionDrift()
         }
-        permissionDriftTimer?.tolerance = 0.4
+        timer.tolerance = 0.4
     }
 
     func stopPermissionDriftMonitoring() {
-        permissionDriftTimer?.invalidate()
-        permissionDriftTimer = nil
+        permissionPollingRuntime.driftTimer.cancel()
     }
 
     func pollPermissionDrift() {
@@ -183,158 +177,4 @@ extension AppCoordinator {
         }
     }
 
-    func handleEventTapSignal(_ signal: EventTapSignal) {
-        switch signal {
-        case .triggerDown:
-            eventTap.acknowledgeMainSignal()
-            recordLocalDiagnostic(
-                stage: "trigger_down_received",
-                details: [
-                    "trigger": settings.triggerKey.identifier,
-                    "state": String(describing: state),
-                    "listening_enabled": settings.listeningEnabled ? "true" : "false"
-                ]
-            )
-            handleRecordingTriggerDown()
-        case .triggerUp:
-            eventTap.acknowledgeMainSignal()
-            recordLocalDiagnostic(
-                stage: "trigger_up_received",
-                details: [
-                    "trigger": settings.triggerKey.identifier,
-                    "state": String(describing: state)
-                ]
-            )
-            handleRecordingTriggerUp()
-        case .cancel(let reason):
-            cancelCurrentOperation(reason: reason)
-        case .tapDisabled:
-            handleEventTapDisabled()
-        case .tapReenabled:
-            tapStatus = strings.listeningWithTrigger(settings.triggerKey)
-            recordLocalDiagnostic(stage: "event_tap_reenabled")
-            rebuildMenu()
-        case .tapFailed:
-            tapStatus = strings.listeningUnavailable()
-            if eventTapFailureHUDEnabled {
-                hud.showWarningStatus(strings.permissionIssue, duration: warningDuration)
-            }
-            recordLocalDiagnostic(stage: "event_tap_failed", errorKind: "tap_failed")
-            rebuildMenu()
-        case .triggerAckTimeout:
-            handleTriggerAckTimeout()
-        case .triggerWatchdogReset:
-            tapStatus = strings.eventTapWatchdogReset
-            hud.showTransientStatus(strings.eventTapWatchdogReset, duration: warningDuration)
-            recordLocalDiagnostic(
-                stage: "event_tap_watchdog_reset",
-                errorKind: "trigger_state_stale",
-                details: ["trigger": settings.triggerKey.identifier]
-            )
-            rebuildMenu()
-        case .emergencyRescue:
-            performEmergencyRescueExit()
-        }
-    }
-
-    func handleEventTapDisabled() {
-        resetContinuousRecordingTriggerState()
-        eventTap.stop()
-        tapStatus = strings.eventTapDisabled()
-        let snapshot = PermissionChecker.snapshot()
-        lastPermissionSnapshot = snapshot
-        recordLocalDiagnostic(
-            stage: "event_tap_disabled",
-            errorKind: "tap_disabled",
-            details: diagnosticRuntimeDetails(permissionDetails(snapshot))
-        )
-        switch EventTapDisabledRecoveryPlanner.action(
-            listeningEnabled: settings.listeningEnabled,
-            globalStopActive: globalStopActive,
-            permissions: snapshot
-        ) {
-        case .enterPermissionBlockedStop:
-            enterPermissionBlockedStop(recordDiagnostic: false)
-        case .restartListening:
-            startListening(showFailureHUD: false)
-        case .stayStopped:
-            break
-        }
-        rebuildMenu()
-    }
-
-    func handleTriggerAckTimeout() {
-        resetContinuousRecordingTriggerState()
-        maxRecordingTimer?.invalidate()
-        maxRecordingTimer = nil
-        resetListeningHUDRevealState()
-        let stopWasPending = cancelPendingRecordingStop()
-        transcriptionTask?.cancel()
-        pendingTranscription?.liveASRFinalTask?.cancel()
-        transcriptionTask = nil
-        if RecordingStopCancellationPlanner.shouldCancelRecordingSource(recordingStopInProgress: stopWasPending) {
-            recordingSource.cancel()
-        }
-        cancelLiveASRSession()
-        eventTap.setCancellationActive(false)
-        eventTap.setTriggerSuppressionEnabled(false)
-        eventTap.stop()
-        hud.hide()
-        actionPanel.cancel()
-        recordingFocus = nil
-        recordingStartDate = nil
-        pendingTranscription = nil
-        stopPermissionDriftMonitoring()
-        state = .idle
-        settings.listeningEnabled = false
-        globalStopActive = true
-        stopReason = .manual
-        settings.stopReason = .manual
-        tapStatus = strings.stopped
-        recordLocalDiagnostic(
-            stage: "event_tap_trigger_ack_timeout",
-            errorKind: "trigger_ack_timeout",
-            details: diagnosticRuntimeDetails(["listening_enabled": "false"])
-        )
-        rebuildMenu()
-    }
-
-    func performEmergencyRescueExit() {
-        resetContinuousRecordingTriggerState()
-        maxRecordingTimer?.invalidate()
-        maxRecordingTimer = nil
-        resetListeningHUDRevealState()
-        let stopWasPending = cancelPendingRecordingStop()
-        transcriptionTask?.cancel()
-        pendingTranscription?.liveASRFinalTask?.cancel()
-        transcriptionTask = nil
-        if RecordingStopCancellationPlanner.shouldCancelRecordingSource(recordingStopInProgress: stopWasPending) {
-            recordingSource.cancel()
-        }
-        cancelLiveASRSession()
-        triggerCapture.stop()
-        eventTap.setCancellationActive(false)
-        eventTap.setTriggerSuppressionEnabled(false)
-        eventTap.stop()
-        hud.hide()
-        actionPanel.cancel()
-        recordingFocus = nil
-        recordingStartDate = nil
-        pendingTranscription = nil
-        stopPermissionReadinessPolling()
-        stopPermissionDriftMonitoring()
-        state = .idle
-        settings.listeningEnabled = false
-        globalStopActive = true
-        stopReason = .manual
-        settings.stopReason = .manual
-        settings.runtimeActive = false
-        tapStatus = strings.stopped
-        recordLocalDiagnostic(
-            stage: "fn_escape_quit",
-            errorKind: "emergency_rescue",
-            details: diagnosticRuntimeDetails(["listening_enabled": "false"])
-        )
-        NSApp.terminate(nil)
-    }
 }

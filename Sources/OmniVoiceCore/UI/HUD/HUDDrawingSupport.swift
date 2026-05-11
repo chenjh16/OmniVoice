@@ -23,6 +23,15 @@ func textHaloColor(for tone: HUDTextTone, alpha: CGFloat) -> NSColor? {
     }
 }
 
+func glassTextShadow(alpha: CGFloat) -> NSShadow? {
+    guard alpha > 0 else { return nil }
+    let shadow = NSShadow()
+    shadow.shadowColor = NSColor.black.withAlphaComponent(alpha)
+    shadow.shadowBlurRadius = 4
+    shadow.shadowOffset = NSSize(width: 0, height: -0.5)
+    return shadow
+}
+
 enum GlassTextReadabilityRenderer {
     static func haloAttributedString(
         from attributedString: NSAttributedString,

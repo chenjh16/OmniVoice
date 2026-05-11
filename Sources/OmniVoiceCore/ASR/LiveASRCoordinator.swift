@@ -47,6 +47,7 @@ final class LiveASRCoordinator {
     private var bufferedChunks: [AudioSampleChunk] = []
     private var bufferedSeconds: Double = 0
     private var bufferOverflowed = false
+    private var transcriptAccumulator = LiveASRTranscriptAccumulator()
     private let bufferLimitSeconds: Double
 
     private(set) var previewText = ""
@@ -95,6 +96,8 @@ final class LiveASRCoordinator {
         bufferedChunks.removeAll(keepingCapacity: true)
         bufferedSeconds = 0
         bufferOverflowed = true
+        transcriptAccumulator.reset()
+        previewText = ""
         gateState = .startFailed(errorKind: errorKind)
     }
 
@@ -113,6 +116,8 @@ final class LiveASRCoordinator {
             bufferedChunks.removeAll(keepingCapacity: true)
             bufferedSeconds = 0
             bufferOverflowed = true
+            transcriptAccumulator.reset()
+            previewText = ""
             gateState = .bufferOverflowed
             return .bufferOverflowed(limitSeconds: bufferLimitSeconds)
         }
@@ -122,25 +127,29 @@ final class LiveASRCoordinator {
     func acceptPreview(
         _ update: LiveASRUpdate,
         isRecording: Bool,
-        previewEnabled: Bool
+        previewEnabled: Bool,
+        now: Date = Date()
     ) -> String? {
         guard isRecording else { return nil }
-        let text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let snapshot = transcriptAccumulator.accept(update, now: now) else { return nil }
+        let text = snapshot.displayText
         guard !text.isEmpty else { return nil }
         gateState = .sawText(characterCount: text.count)
-        guard previewEnabled else { return nil }
         previewText = text
+        guard previewEnabled else { return nil }
         return text
     }
 
     func makeFinalTask(useForSystemPipeline: Bool) -> Task<ASRRecognitionResult, Error>? {
         let task = preparationTask
         let overflowed = bufferOverflowed
+        let transcriptSnapshot = transcriptAccumulator.snapshotForFinal()
         preparationTask = nil
         bufferedChunks.removeAll(keepingCapacity: true)
         bufferedSeconds = 0
         bufferOverflowed = false
         previewText = ""
+        transcriptAccumulator.reset()
         gateState = .notStarted
 
         guard useForSystemPipeline, !overflowed else {
@@ -156,7 +165,11 @@ final class LiveASRCoordinator {
             guard let session = await MainActor.run(body: { self?.takeSession() }) else {
                 throw SystemSpeechRecognitionError.recognitionFailed("Live ASR did not start")
             }
-            return try await session.finish()
+            let result = try await session.finish()
+            return LiveASRFinalTextResolver.resolve(
+                sessionResult: result,
+                snapshot: transcriptSnapshot
+            )
         }
     }
 
@@ -169,6 +182,7 @@ final class LiveASRCoordinator {
         bufferedSeconds = 0
         bufferOverflowed = false
         previewText = ""
+        transcriptAccumulator.reset()
         gateState = .notStarted
     }
 

@@ -64,7 +64,10 @@ final class ClassicSpeechFileRecognitionSession: @unchecked Sendable {
                 latestResult = result
             }
             if result.isFinal {
-                complete(.success(Self.result(from: result, allowedAppleServerRecognition: allowedAppleServerRecognition)))
+                complete(.success(ClassicSpeechRecognitionCompletionResolver.finalResult(
+                    from: result,
+                    allowedAppleServerRecognition: allowedAppleServerRecognition
+                )))
             }
             return
         }
@@ -79,12 +82,11 @@ final class ClassicSpeechFileRecognitionSession: @unchecked Sendable {
 
     private func completeWithLatestOrError(_ error: Error) {
         let latest = lock.withLock { latestResult }
-        if let latest,
-           !latest.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            complete(.success(Self.result(from: latest, allowedAppleServerRecognition: allowedAppleServerRecognition)))
-        } else {
-            complete(.failure(error))
-        }
+        complete(ClassicSpeechRecognitionCompletionResolver.resultOrError(
+            latest,
+            allowedAppleServerRecognition: allowedAppleServerRecognition,
+            fallback: error
+        ))
     }
 
     private func complete(_ result: Result<ASRRecognitionResult, Error>) {
@@ -101,12 +103,6 @@ final class ClassicSpeechFileRecognitionSession: @unchecked Sendable {
         completionState.0?.resume(with: result)
     }
 
-    private static func result(
-        from result: SFSpeechRecognitionResult,
-        allowedAppleServerRecognition: Bool
-    ) -> ASRRecognitionResult {
-        SystemSpeechRecognizer.result(from: result, allowedAppleServerRecognition: allowedAppleServerRecognition)
-    }
 }
 
 final class ClassicSpeechLiveRecognitionSession: LiveSystemSpeechRecognitionSession, @unchecked Sendable {
@@ -194,12 +190,15 @@ final class ClassicSpeechLiveRecognitionSession: LiveSystemSpeechRecognitionSess
             lock.withLock {
                 latestResult = result
             }
-            let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = ClassicSpeechRecognitionCompletionResolver.trimmedText(from: result)
             if !text.isEmpty {
                 onUpdate(LiveASRUpdate(text: text, isFinal: result.isFinal))
             }
             if result.isFinal {
-                complete(.success(Self.result(from: result, allowedAppleServerRecognition: allowedAppleServerRecognition)))
+                complete(.success(ClassicSpeechRecognitionCompletionResolver.finalResult(
+                    from: result,
+                    allowedAppleServerRecognition: allowedAppleServerRecognition
+                )))
             }
             return
         }
@@ -214,12 +213,11 @@ final class ClassicSpeechLiveRecognitionSession: LiveSystemSpeechRecognitionSess
 
     private func completeWithLatestOrError(_ error: Error) {
         let latest = lock.withLock { latestResult }
-        if let latest,
-           !latest.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            complete(.success(Self.result(from: latest, allowedAppleServerRecognition: allowedAppleServerRecognition)))
-        } else {
-            complete(.failure(error))
-        }
+        complete(ClassicSpeechRecognitionCompletionResolver.resultOrError(
+            latest,
+            allowedAppleServerRecognition: allowedAppleServerRecognition,
+            fallback: error
+        ))
     }
 
     private func complete(_ result: Result<ASRRecognitionResult, Error>) {
@@ -231,13 +229,6 @@ final class ClassicSpeechLiveRecognitionSession: LiveSystemSpeechRecognitionSess
             return current
         }
         continuation?.resume(with: result)
-    }
-
-    private static func result(
-        from result: SFSpeechRecognitionResult,
-        allowedAppleServerRecognition: Bool
-    ) -> ASRRecognitionResult {
-        SystemSpeechRecognizer.result(from: result, allowedAppleServerRecognition: allowedAppleServerRecognition)
     }
 
     static func buffer(from chunk: AudioSampleChunk) -> AVAudioPCMBuffer? {
@@ -267,10 +258,29 @@ final class ClassicSpeechLiveRecognitionSession: LiveSystemSpeechRecognitionSess
     }
 }
 
-private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
+enum ClassicSpeechRecognitionCompletionResolver {
+    static func trimmedText(from result: SFSpeechRecognitionResult) -> String {
+        result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func resultOrError(
+        _ latest: SFSpeechRecognitionResult?,
+        allowedAppleServerRecognition: Bool,
+        fallback error: Error
+    ) -> Result<ASRRecognitionResult, Error> {
+        guard let latest, !trimmedText(from: latest).isEmpty else {
+            return .failure(error)
+        }
+        return .success(finalResult(
+            from: latest,
+            allowedAppleServerRecognition: allowedAppleServerRecognition
+        ))
+    }
+
+    static func finalResult(
+        from result: SFSpeechRecognitionResult,
+        allowedAppleServerRecognition: Bool
+    ) -> ASRRecognitionResult {
+        SystemSpeechRecognizer.result(from: result, allowedAppleServerRecognition: allowedAppleServerRecognition)
     }
 }

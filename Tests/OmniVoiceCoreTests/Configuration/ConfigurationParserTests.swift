@@ -6,11 +6,8 @@ extension ConfigurationTests {
 
     @Test
     func configLoaderReadsJSONCSourcesAndRedactsSecrets() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-tests")
+        try fixture.write("""
         {
           // JSONC comments are allowed.
           "active_source": "cn",
@@ -98,15 +95,13 @@ extension ConfigurationTests {
             },
           },
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
-
-        let loader = ConfigLoader(configFileURL: configURL)
+        """)
+        let loader = fixture.loader
 
         let config = loader.load()
         #expect(config.baseURL.absoluteString == "https://cn.example.test")
         #expect(config.apiKey == "cn-secret")
-        #expect(config.defaultModel == .mimoV25)
+        #expect(config.modelCatalogs.inputAudioDefaultModel == .mimoV25)
         #expect(config.source == .configFile)
         #expect(config.activeSourceID == "cn")
         #expect(config.resolvedSourceID == "cn")
@@ -158,11 +153,8 @@ extension ConfigurationTests {
 
     @Test
     func configLoaderParsesDynamicModelCatalogsAndSystemASRSettings() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-model-catalogs-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-model-catalogs")
+        try fixture.write("""
         {
           "active_source": "config1",
           "transcription_pipeline": { "mode": "system_asr_text_llm" },
@@ -204,10 +196,9 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        """)
 
-        let config = ConfigLoader(configFileURL: configURL).load()
+        let config = fixture.loader.load()
 
         #expect(config.pipelineMode == .systemASRTextLLM)
         #expect(config.modelCatalogs.inputAudioDefaultModel.rawValue == "qwen3.5-omni-plus")
@@ -220,11 +211,8 @@ extension ConfigurationTests {
 
     @Test
     func configLoaderMergesUserOverridesWithCanonicalDefaults() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-config-overrides-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-config-overrides")
+        try fixture.write("""
         {
           "active_source": "cn",
           "models": {
@@ -239,10 +227,9 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        """)
 
-        let config = ConfigLoader(configFileURL: configURL).load()
+        let config = fixture.loader.load()
 
         #expect(config.activeSourceID == "cn")
         #expect(config.sources.map(\.id) == ["cn"])
@@ -258,11 +245,8 @@ extension ConfigurationTests {
 
     @Test
     func configLoaderReadsSystemASROnlyPipelineMode() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-system-asr-only-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-system-asr-only")
+        try fixture.write("""
         {
           "active_source": "auto",
           "transcription_pipeline": { "mode": "system_asr_only" },
@@ -288,10 +272,9 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        """)
 
-        let config = ConfigLoader(configFileURL: configURL).load()
+        let config = fixture.loader.load()
 
         #expect(config.pipelineMode == .systemASROnly)
         #expect(config.systemASRSettings.engine == .classicSpeech)
@@ -309,25 +292,20 @@ extension ConfigurationTests {
     }
 
     @Test
-    func uiLanguageDefaultsToChineseAndPersists() {
-        let suiteName = "omnivoice-ui-language-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(LanguagePreference.english.rawValue, forKey: SettingsStore.Key.language)
-
-        let settings = SettingsStore(defaults: defaults)
-        #expect(settings.uiLanguage == .chinese)
+    func configPreferencesDefaultToChineseAndSupportUpdates() {
+        var preferences = ConfigPreferences.defaultPreferences(selectedModel: .defaultInputAudioModel)
+        #expect(preferences.uiLanguage == .chinese)
         #expect(UILanguage.migratedFromLegacyLanguage(LanguagePreference.english.rawValue) == .english)
-        settings.uiLanguage = .chinese
-        #expect(settings.uiLanguage == .chinese)
-        #expect(settings.hudMessageDuration == .seconds3)
-        settings.hudMessageDuration = .seconds8
-        #expect(settings.hudMessageDuration == .seconds8)
-        #expect(settings.minRecordingDuration == .milliseconds500)
-        settings.minRecordingDuration = .seconds2
-        #expect(settings.minRecordingDuration == .seconds2)
-        #expect(settings.hudRevealDelay == .milliseconds100)
-        settings.hudRevealDelay = .milliseconds500
-        #expect(settings.hudRevealDelay == .milliseconds500)
+        preferences = preferences.updating(uiLanguage: .chinese)
+        #expect(preferences.uiLanguage == .chinese)
+        #expect(preferences.hudMessageDuration == .seconds3)
+        preferences = preferences.updating(hudMessageDuration: .seconds8)
+        #expect(preferences.hudMessageDuration == .seconds8)
+        #expect(preferences.minRecordingDuration == .milliseconds500)
+        preferences = preferences.updating(minRecordingDuration: .seconds2)
+        #expect(preferences.minRecordingDuration == .seconds2)
+        #expect(preferences.hudRevealDelay == .milliseconds100)
+        preferences = preferences.updating(hudRevealDelay: .milliseconds500)
+        #expect(preferences.hudRevealDelay == .milliseconds500)
     }
 }

@@ -17,8 +17,8 @@ public final class DictationHUDController {
     private var contentStackCenterXConstraint: NSLayoutConstraint!
     private var contentStackPreviewLeadingConstraint: NSLayoutConstraint!
     private var previewTextWidthConstraint: NSLayoutConstraint!
-    private var progressTimer: Timer?
-    private var hideWorkItem: DispatchWorkItem?
+    private let progressTimer = MainActorTimerSlot()
+    private let hideWorkItem = MainActorWorkItemSlot()
     private var transcribingStartDate: Date?
     private var estimator: TranscriptionProgressEstimator?
     private var receivedDelta = false
@@ -37,14 +37,7 @@ public final class DictationHUDController {
             backing: .buffered,
             defer: false
         )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = HUDSurfaceMetrics.usesSystemShadow
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.ignoresMouseEvents = true
+        FloatingSurfacePanelConfigurator.configure(panel, role: .hud)
 
         shadowView.translatesAutoresizingMaskIntoConstraints = false
         capsuleView.translatesAutoresizingMaskIntoConstraints = false
@@ -230,8 +223,8 @@ public final class DictationHUDController {
         setLabelText(text)
         show(width: width(for: text, includesWaveform: false), spring: false)
         if showsProgress {
-            progressTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.tickProgress() }
+            progressTimer.schedule(interval: 1.0 / 30.0, repeats: true) { [weak self] in
+                self?.tickProgress()
             }
         }
     }
@@ -356,21 +349,17 @@ public final class DictationHUDController {
 
     private func prepareCompactSurface() {
         surfaceGeneration += 1
-        hideWorkItem?.cancel()
-        hideWorkItem = nil
+        hideWorkItem.cancel()
         contentStack.isHidden = false
         contentStack.alphaValue = 1
     }
 
     private func scheduleHide(after duration: TimeInterval) {
-        hideWorkItem?.cancel()
         let generation = surfaceGeneration
-        let workItem = DispatchWorkItem { [weak self] in
+        hideWorkItem.schedule(after: duration) { [weak self] in
             guard let self, self.surfaceGeneration == generation else { return }
             self.hide()
         }
-        hideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
     }
 
     private func tickProgress() {
@@ -437,13 +426,11 @@ public final class DictationHUDController {
     }
 
     private func tailPreview(_ text: String) -> String {
-        guard text.count > 44 else { return text }
-        return "…" + text.suffix(44)
+        HUDPreviewTextFormatter.transcriptionTail(text)
     }
 
     private func resetTranscriptionState() {
-        progressTimer?.invalidate()
-        progressTimer = nil
+        progressTimer.cancel()
         waveformView.stopAnimating()
         transcribingStartDate = nil
         estimator = nil
@@ -537,9 +524,10 @@ public final class DictationHUDController {
         previewBadge.textHaloColor = textHaloColor(for: tone, alpha: haloAlpha * 0.82)
         previewBadge.textHaloWidth = haloWidth * 0.86
         previewBadge.borderWidth = 0.6
-        label.shadow = shadow(alpha: shadowAlpha)
-        previewTextView.shadow = shadow(alpha: shadowAlpha)
-        previewBadge.shadow = shadow(alpha: shadowAlpha)
+        let textShadow = glassTextShadow(alpha: shadowAlpha)
+        label.shadow = textShadow
+        previewTextView.shadow = textShadow
+        previewBadge.shadow = textShadow
     }
 
     private func setLabelText(_ text: String) {
@@ -564,13 +552,4 @@ public final class DictationHUDController {
             contentStackCenterXConstraint.isActive = true
         }
     }
-}
-
-private func shadow(alpha: CGFloat) -> NSShadow? {
-    guard alpha > 0 else { return nil }
-    let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(alpha)
-    shadow.shadowBlurRadius = 4
-    shadow.shadowOffset = NSSize(width: 0, height: -0.5)
-    return shadow
 }

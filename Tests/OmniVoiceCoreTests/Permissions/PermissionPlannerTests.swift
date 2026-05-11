@@ -58,12 +58,6 @@ struct PermissionPlannerTests {
         ) == [.requestSpeechRecognition])
         #expect(PermissionGuidePlanner.actions(
             for: missingSpeech,
-            hasRunStartupGuide: false,
-            isManualRequest: false,
-            requiresSpeechRecognition: true
-        ) == [.requestSpeechRecognition])
-        #expect(PermissionGuidePlanner.actions(
-            for: missingSpeech,
             hasRunStartupGuide: true,
             isManualRequest: true
         ) == [.requestSpeechRecognition])

@@ -7,7 +7,6 @@ public struct MimoConfig: Equatable, Sendable {
 
     public let baseURL: URL
     public let apiKey: String?
-    public let defaultModel: AllowedSpeechModel
     public let source: ConfigSource
     public let activeSourceID: String
     public let resolvedSourceID: String
@@ -24,7 +23,6 @@ public struct MimoConfig: Equatable, Sendable {
     public init(
         baseURL: URL = Self.defaultBaseURL,
         apiKey: String? = nil,
-        defaultModel: AllowedSpeechModel = .defaultModel,
         source: ConfigSource = .configFile,
         activeSourceID: String = Self.defaultSourceID,
         resolvedSourceID: String? = nil,
@@ -41,7 +39,6 @@ public struct MimoConfig: Equatable, Sendable {
         let normalized = baseURL.normalizedMimoBaseURL ?? baseURL
         self.baseURL = normalized
         self.apiKey = apiKey?.nilIfBlank
-        self.defaultModel = defaultModel
         self.source = source
         self.activeSourceID = activeSourceID.nilIfBlank ?? Self.defaultSourceID
         self.resolvedSourceID = resolvedSourceID?.nilIfBlank ?? self.activeSourceID
@@ -54,7 +51,9 @@ public struct MimoConfig: Equatable, Sendable {
         self.customStyles = customStyles
         self.keywordGroups = keywordGroups
         self.latencySettings = latencySettings
-        self.preferences = preferences ?? ConfigPreferences.defaultPreferences(selectedModel: defaultModel)
+        self.preferences = preferences ?? ConfigPreferences.defaultPreferences(
+            selectedModel: modelCatalogs.inputAudioDefaultModel
+        )
         self.warnings = warnings
     }
 
@@ -63,7 +62,6 @@ public struct MimoConfig: Equatable, Sendable {
             baseURLHost: baseURL.host ?? baseURL.absoluteString,
             apiKeyConfigured: apiKey?.isEmpty == false,
             apiKeyPreview: Self.redactedAPIKey(apiKey),
-            defaultModel: defaultModel,
             source: source,
             activeSourceID: activeSourceID,
             resolvedSourceID: resolvedSourceID,
@@ -117,22 +115,12 @@ public struct MimoConfig: Equatable, Sendable {
             requiredModel: selectedPipelineModel,
             mode: pipelineMode
         ) else { return nil }
-        return MimoConfig(
+        return updating(
             baseURL: selected.baseURL,
             apiKey: selected.apiKey,
-            defaultModel: defaultModel,
-            source: source,
             activeSourceID: id,
             resolvedSourceID: selected.id,
-            sources: sources,
-            modelCatalogs: modelCatalogs,
-            pipelineMode: pipelineMode,
-            systemASRSettings: systemASRSettings,
-            customStyles: customStyles,
-            keywordGroups: keywordGroups,
-            latencySettings: latencySettings,
-            preferences: preferences.with(selectedModel: defaultModel),
-            warnings: warnings
+            preferences: preferences.with(selectedModel: modelCatalogs.inputAudioDefaultModel)
         )
     }
 
@@ -147,22 +135,11 @@ public struct MimoConfig: Equatable, Sendable {
         ) else {
             return self
         }
-        return MimoConfig(
+        return updating(
             baseURL: selected.baseURL,
             apiKey: selected.apiKey,
-            defaultModel: defaultModel,
-            source: source,
-            activeSourceID: activeSourceID,
             resolvedSourceID: selected.id,
-            sources: sources,
-            modelCatalogs: modelCatalogs,
-            pipelineMode: pipelineMode,
-            systemASRSettings: systemASRSettings,
-            customStyles: customStyles,
-            keywordGroups: keywordGroups,
-            latencySettings: latencySettings,
-            preferences: preferences.with(selectedModel: defaultModel),
-            warnings: warnings
+            preferences: preferences.with(selectedModel: modelCatalogs.inputAudioDefaultModel)
         )
     }
 
@@ -360,7 +337,7 @@ public struct ConfigPreferences: Equatable, Sendable {
     }
 
     public static func defaultPreferences(
-        selectedModel: AllowedSpeechModel = .defaultModel,
+        selectedModel: AllowedSpeechModel = .defaultInputAudioModel,
         uiLanguage: UILanguage = .defaultLanguage
     ) -> ConfigPreferences {
         ConfigPreferences(
@@ -425,30 +402,17 @@ public struct ConfigPreferences: Equatable, Sendable {
 
 public enum ConfigSourceNameValidator {
     public static func isValid(_ value: String) -> Bool {
-        guard let trimmed = value.nilIfBlank,
-              trimmed != MimoConfig.autoSourceID,
-              trimmed.count <= 48 else {
-            return false
-        }
-        return trimmed.range(
-            of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#,
-            options: .regularExpression
-        ) != nil
+        IdentifierValidator.isValid(value, reservedValues: [MimoConfig.autoSourceID])
     }
 }
 
 public enum CustomTranscriptionStyleValidator {
     public static func isValidID(_ value: String) -> Bool {
-        guard let trimmed = value.nilIfBlank,
-              trimmed.count <= 48,
-              !TranscriptionStyle.allCases.map(\.rawValue).contains(trimmed),
-              trimmed != MimoConfig.autoSourceID else {
-            return false
-        }
-        return trimmed.range(
-            of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#,
-            options: .regularExpression
-        ) != nil
+        IdentifierValidator.isValid(
+            value,
+            reservedValues: [MimoConfig.autoSourceID],
+            disallowedValues: Set(TranscriptionStyle.allCases.map(\.rawValue))
+        )
     }
 
     public static func isValidPrompt(_ value: String) -> Bool {

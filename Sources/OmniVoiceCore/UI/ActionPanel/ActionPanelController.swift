@@ -27,6 +27,7 @@ public final class ActionPanelController {
     private var tertiaryAction: (() -> Void)?
     private var cancelAction: (() -> Void)?
     private var styleSelectionAction: ((TranscriptionStyleSelection) -> Void)?
+    private let copyCloseWorkItem = MainActorWorkItemSlot()
 
     public init() {}
 
@@ -129,6 +130,7 @@ public final class ActionPanelController {
     }
 
     public func cancel() {
+        copyCloseWorkItem.cancel()
         panel?.orderOut(nil)
         currentText = ""
         primaryAction = nil
@@ -309,17 +311,20 @@ public final class ActionPanelController {
         applyTypography(for: surface)
         let textTone: HUDTextTone
         let textShadow: NSShadow?
+        let readability: GlassReadabilityStyle?
         if surface == .nativeGlass, let backgroundView {
-            let readability = GlassReadabilityResolver.resolve(
+            let resolvedReadability = GlassReadabilityResolver.resolve(
                 appearance: glassAppearance(for: backgroundView.effectiveAppearance),
                 status: status,
                 role: .actionPanel
             )
-            backgroundView.glassReadability = readability
-            textTone = readability.textTone
-            textShadow = actionPanelTextShadow(alpha: readability.shadowAlpha)
+            backgroundView.glassReadability = resolvedReadability
+            readability = resolvedReadability
+            textTone = resolvedReadability.textTone
+            textShadow = glassTextShadow(alpha: resolvedReadability.shadowAlpha)
         } else {
             let palette = HUDPaletteResolver.resolve(surface: surface, status: status)
+            readability = nil
             textTone = palette.textTone
             textShadow = nil
         }
@@ -331,13 +336,6 @@ public final class ActionPanelController {
         titleLabel?.shadow = textShadow
         textView?.shadow = textShadow
         if surface == .nativeGlass {
-            let readability = backgroundView.map {
-                GlassReadabilityResolver.resolve(
-                    appearance: glassAppearance(for: $0.effectiveAppearance),
-                    status: status,
-                    role: .actionPanel
-                )
-            }
             titleLabel?.textHaloColor = textHaloColor(for: textTone, alpha: readability?.haloAlpha ?? 0)
             titleLabel?.textHaloWidth = readability?.haloWidth ?? 0
         } else {
@@ -354,12 +352,7 @@ public final class ActionPanelController {
             button?.surface = surface
             button?.statusTone = status
             button?.glassTextTone = textTone
-            if surface == .nativeGlass, let backgroundView {
-                let readability = GlassReadabilityResolver.resolve(
-                    appearance: glassAppearance(for: backgroundView.effectiveAppearance),
-                    status: status,
-                    role: .actionPanel
-                )
+            if surface == .nativeGlass, let readability {
                 button?.glassTextHaloColor = textHaloColor(
                     for: textTone,
                     alpha: readability.haloAlpha * GlassTypography.panelButtonHaloAlphaScale
@@ -389,28 +382,12 @@ public final class ActionPanelController {
 
     private func setBodyText(_ body: String) {
         guard let textView else { return }
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = ActionPanelTextAlignmentPolicy.body
-        paragraph.lineBreakMode = .byWordWrapping
-        textView.textStorage?.setAttributedString(NSAttributedString(
-            string: body,
-            attributes: textAttributes(
-                font: textView.font ?? .systemFont(ofSize: 14, weight: .semibold),
-                paragraph: paragraph
-            )
+        textView.textStorage?.setAttributedString(ActionPanelAttributedTextBuilder.body(
+            body,
+            font: textView.font ?? .systemFont(ofSize: 14, weight: .semibold),
+            color: panelTextColor,
+            shadow: panelTextShadow
         ))
-    }
-
-    private func textAttributes(font: NSFont, paragraph: NSParagraphStyle) -> [NSAttributedString.Key: Any] {
-        var attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: panelTextColor,
-            .paragraphStyle: paragraph
-        ]
-        if let panelTextShadow {
-            attributes[.shadow] = panelTextShadow
-        }
-        return attributes
     }
 
     @objc private func primaryButtonPressed() {
@@ -459,17 +436,8 @@ public final class ActionPanelController {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(currentText, forType: .string)
         primaryButton?.title = copiedTitle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        copyCloseWorkItem.schedule(after: 0.35) { [weak self] in
             self?.cancel()
         }
     }
-}
-
-private func actionPanelTextShadow(alpha: CGFloat) -> NSShadow? {
-    guard alpha > 0 else { return nil }
-    let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(alpha)
-    shadow.shadowBlurRadius = 4
-    shadow.shadowOffset = NSSize(width: 0, height: -0.5)
-    return shadow
 }

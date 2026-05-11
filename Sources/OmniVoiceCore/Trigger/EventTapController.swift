@@ -2,147 +2,16 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-public enum EventTapSignal: Equatable, Sendable {
-    case triggerDown
-    case triggerUp
-    case cancel(EventTapCancellationReason)
-    case tapDisabled
-    case tapReenabled
-    case tapFailed
-    case triggerAckTimeout
-    case triggerWatchdogReset
-    case emergencyRescue
-}
-
-public enum EventTapCancellationReason: Equatable, Sendable {
-    case escapeKey
-    case triggerCombination
-}
-
-public enum EventTapTriggerAction: Equatable, Sendable {
-    case down
-    case up
-}
-
-public struct EventTapTriggerDecision: Equatable, Sendable {
-    public let action: EventTapTriggerAction?
-    public let shouldSuppress: Bool
-
-    public init(action: EventTapTriggerAction?, shouldSuppress: Bool) {
-        self.action = action
-        self.shouldSuppress = shouldSuppress
-    }
-
-    public static let passThrough = EventTapTriggerDecision(action: nil, shouldSuppress: false)
-}
-
-public enum EventTapTriggerClassifier {
-    public static func decision(
-        for trigger: TriggerKey,
-        type: CGEventType,
-        flags: CGEventFlags,
-        keyCode: Int,
-        isRepeat: Bool,
-        triggerPressed: Bool
-    ) -> EventTapTriggerDecision {
-        switch trigger.kind {
-        case .fnGlobe:
-            guard type == .flagsChanged else { return .passThrough }
-            let fnDown = flags.contains(.maskSecondaryFn)
-            guard fnDown != triggerPressed else { return .passThrough }
-            return EventTapTriggerDecision(action: fnDown ? .down : .up, shouldSuppress: true)
-        case .functionKey:
-            guard trigger.keyCode == keyCode else { return .passThrough }
-            if type == .keyDown {
-                return EventTapTriggerDecision(action: isRepeat ? nil : .down, shouldSuppress: true)
-            }
-            if type == .keyUp {
-                return EventTapTriggerDecision(action: .up, shouldSuppress: true)
-            }
-            return .passThrough
-        case .modifier:
-            guard type == .flagsChanged, trigger.keyCode == keyCode else { return .passThrough }
-            let pressed = flags.rawValue & trigger.modifierFlagsRawValue != 0
-            return EventTapTriggerDecision(action: pressed ? .down : .up, shouldSuppress: true)
-        case .capsLock:
-            guard type == .flagsChanged, trigger.keyCode == keyCode else { return .passThrough }
-            return EventTapTriggerDecision(action: triggerPressed ? .up : .down, shouldSuppress: true)
-        }
-    }
-}
-
-public enum EventTapEventTypes {
-    // NSSystemDefined is delivered through CGEvent with raw value 14 for media/brightness keys.
-    public static let systemDefined = CGEventType(rawValue: 14)!
-}
-
-public enum EventTapFnCombinationCancellation {
-    public static func cancelReason(
-        trigger: TriggerKey,
-        type: CGEventType,
-        triggerPressed: Bool
-    ) -> EventTapCancellationReason? {
-        guard trigger.kind == .fnGlobe, triggerPressed else { return nil }
-        return type == .keyDown || type == EventTapEventTypes.systemDefined ? .triggerCombination : nil
-    }
-
-    public static func shouldCancel(
-        trigger: TriggerKey,
-        type: CGEventType,
-        triggerPressed: Bool
-    ) -> Bool {
-        cancelReason(trigger: trigger, type: type, triggerPressed: triggerPressed) != nil
-    }
-}
-
-public enum FnEscapeRescueDetector {
-    public static let escapeKeyCode = 53
-
-    public static func shouldRescue(
-        type: CGEventType,
-        keyCode: Int,
-        flags: CGEventFlags
-    ) -> Bool {
-        type == .keyDown &&
-        keyCode == escapeKeyCode &&
-        flags.contains(.maskSecondaryFn)
-    }
-}
-
-public enum EventTapEscapeCancellation {
-    public static func cancelReason(
-        type: CGEventType,
-        keyCode: Int,
-        cancellationActive: Bool
-    ) -> EventTapCancellationReason? {
-        guard cancellationActive,
-              type == .keyDown,
-              keyCode == FnEscapeRescueDetector.escapeKeyCode else {
-            return nil
-        }
-        return .escapeKey
-    }
-}
-
 public final class EventTapController: @unchecked Sendable {
     public var onSignal: (@Sendable (EventTapSignal) -> Void)?
 
     private let lock = NSLock()
     private lazy var eventTapRunLoop = EventTapRunLoopController(name: "OmniVoice Event Tap") { [weak self] in
         guard let self else { return nil }
-        let mask =
-            CGEventMask(1 << CGEventType.keyDown.rawValue) |
-            CGEventMask(1 << CGEventType.keyUp.rawValue) |
-            CGEventMask(1 << CGEventType.flagsChanged.rawValue) |
-            CGEventMask(1 << EventTapEventTypes.systemDefined.rawValue)
-        let userInfo = Unmanaged.passUnretained(self).toOpaque()
-        return CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
+        return EventTapFactory.create(
+            owner: self,
+            events: [.keyDown, .keyUp, .flagsChanged, EventTapEventTypes.systemDefined],
             callback: eventTapCallback,
-            userInfo: userInfo
         )
     }
     private var triggerKey: TriggerKey
@@ -259,9 +128,7 @@ public final class EventTapController: @unchecked Sendable {
                 post(.triggerUp)
             }
             post(.tapDisabled)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.eventTapRunLoop.stop()
-            }
+            EventTapFactory.stopAsync(eventTapRunLoop)
             return Unmanaged.passUnretained(event)
         }
 
@@ -275,9 +142,7 @@ public final class EventTapController: @unchecked Sendable {
                 pendingSignalID = nil
             }
             post(.emergencyRescue)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.eventTapRunLoop.stop()
-            }
+            EventTapFactory.stopAsync(eventTapRunLoop)
             return Unmanaged.passUnretained(event)
         }
 
@@ -452,50 +317,10 @@ public final class EventTapController: @unchecked Sendable {
     }
 }
 
-public enum EventTapPollingRecoveryDecision {
-    public static func isReleaseCandidate(trigger: TriggerKey, flags: CGEventFlags) -> Bool {
-        switch trigger.kind {
-        case .fnGlobe:
-            return false
-        case .modifier:
-            return flags.rawValue & trigger.modifierFlagsRawValue == 0
-        case .functionKey, .capsLock:
-            return false
-        }
-    }
-
-    public static func shouldPostSyntheticUp(
-        candidateSince: Date,
-        now: Date,
-        graceSeconds: TimeInterval
-    ) -> Bool {
-        now.timeIntervalSince(candidateSince) >= graceSeconds
-    }
-}
-
-public enum EventTapWatchdogDecision {
-    public static func shouldReset(
-        pressedAt: Date?,
-        now: Date,
-        timeoutSeconds: TimeInterval
-    ) -> Bool {
-        guard let pressedAt else { return false }
-        return now.timeIntervalSince(pressedAt) >= timeoutSeconds
-    }
-}
-
 private let eventTapCallback: CGEventTapCallBack = { proxy, type, event, userInfo in
     guard let userInfo else {
         return Unmanaged.passUnretained(event)
     }
     let controller = Unmanaged<EventTapController>.fromOpaque(userInfo).takeUnretainedValue()
     return controller.handle(proxy: proxy, type: type, event: event)
-}
-
-private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
-    }
 }

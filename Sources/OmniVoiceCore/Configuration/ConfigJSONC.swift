@@ -1,11 +1,11 @@
 import Foundation
 
-public enum JSONCNormalizer {
-    public static func normalize(_ input: String) -> String {
+enum JSONCNormalizer {
+    static func normalize(_ input: String) -> String {
         removeTrailingCommas(from: removeComments(from: input))
     }
 
-    public static func removeComments(from input: String) -> String {
+    static func removeComments(from input: String) -> String {
         var output = ""
         var index = input.startIndex
         var inString = false
@@ -63,7 +63,7 @@ public enum JSONCNormalizer {
         return output
     }
 
-    public static func removeTrailingCommas(from input: String) -> String {
+    static func removeTrailingCommas(from input: String) -> String {
         var output = ""
         var index = input.startIndex
         var inString = false

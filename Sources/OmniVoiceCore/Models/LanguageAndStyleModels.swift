@@ -157,15 +157,7 @@ public enum KeywordGroupValidator {
     public static let maxASRContextualStrings = 100
 
     public static func isValidID(_ value: String) -> Bool {
-        guard let trimmed = value.nilIfBlank,
-              trimmed.count <= 48,
-              trimmed != "auto" else {
-            return false
-        }
-        return trimmed.range(
-            of: #"^[A-Za-z0-9][A-Za-z0-9._-]*$"#,
-            options: .regularExpression
-        ) != nil
+        IdentifierValidator.isValid(value, reservedValues: [MimoConfig.autoSourceID])
     }
 
     public static func sanitizedKeyword(_ value: String) -> String? {

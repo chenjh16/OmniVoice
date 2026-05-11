@@ -12,8 +12,7 @@ extension AppCoordinator {
             state = .idle
             eventTap.setCancellationActive(false)
             updateEventTapTriggerSuppression()
-            maxRecordingTimer?.invalidate()
-            maxRecordingTimer = nil
+            recordingTimingRuntime.maxRecordingTimer.cancel()
             resetListeningHUDRevealState()
             recordingFocus = nil
             recordingStartDate = nil

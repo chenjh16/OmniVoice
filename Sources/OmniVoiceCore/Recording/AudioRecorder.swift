@@ -133,20 +133,12 @@ public final class AudioRecorder: RecordingSource, @unchecked Sendable {
 
         let duration = Double(snapshot.samples.count) / snapshot.sampleRate
         let rms = Float(sqrt(snapshot.sumSquares / Double(max(snapshot.sampleCount, 1))))
-        let validation = RecordingValidator.validate(
+        try RecordingResultValidator.validate(
             durationSeconds: duration,
             overallRMS: rms,
             minimumDurationSeconds: minimumDurationSeconds,
             policy: validationPolicy
         )
-        switch validation.status {
-        case .valid:
-            break
-        case .tooShort:
-            throw AudioRecorderError.tooShort
-        case .tooQuiet:
-            throw AudioRecorderError.tooQuiet
-        }
 
         let wav = try convertToMono16kPCM16WAV(samples: snapshot.samples, sourceSampleRate: snapshot.sampleRate)
         guard WAVEncoder.validatePCM16Mono16kWAV(wav) else {
@@ -220,53 +212,17 @@ public final class AudioRecorder: RecordingSource, @unchecked Sendable {
     }
 
     private func convertToMono16kPCM16WAV(samples: [Float], sourceSampleRate: Double) throws -> Data {
-        guard let sourceFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sourceSampleRate,
-            channels: 1,
-            interleaved: false
-        ),
-        let targetFormat = AVAudioFormat(
+        guard let sourceBuffer = AudioBufferConverter.monoFloatBuffer(samples: samples, sampleRate: sourceSampleRate),
+              let targetFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: 16_000,
             channels: 1,
             interleaved: true
-        ),
-        let sourceBuffer = AVAudioPCMBuffer(
-            pcmFormat: sourceFormat,
-            frameCapacity: AVAudioFrameCount(samples.count)
         ) else {
             throw AudioRecorderError.conversionFailed
         }
 
-        sourceBuffer.frameLength = AVAudioFrameCount(samples.count)
-        let sourcePointer = sourceBuffer.floatChannelData![0]
-        for (index, sample) in samples.enumerated() {
-            sourcePointer[index] = sample
-        }
-
-        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
-            throw AudioRecorderError.conversionFailed
-        }
-
-        let ratio = 16_000 / sourceSampleRate
-        let targetCapacity = AVAudioFrameCount(ceil(Double(samples.count) * ratio) + 1_024)
-        guard let targetBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: targetCapacity) else {
-            throw AudioRecorderError.conversionFailed
-        }
-
-        var didProvideInput = false
-        var conversionError: NSError?
-        let status = converter.convert(to: targetBuffer, error: &conversionError) { _, outStatus in
-            if didProvideInput {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            didProvideInput = true
-            outStatus.pointee = .haveData
-            return sourceBuffer
-        }
-        guard conversionError == nil, status != .error else {
+        guard let targetBuffer = AudioBufferConverter.convertSingleBuffer(sourceBuffer, to: targetFormat) else {
             throw AudioRecorderError.conversionFailed
         }
 
@@ -276,13 +232,5 @@ public final class AudioRecorder: RecordingSource, @unchecked Sendable {
         }
         let pcmData = Data(bytes: int16Data, count: frames * MemoryLayout<Int16>.size)
         return WAVEncoder.wrapPCMDataAsWAV(pcmData, format: .mono16kPCM16)
-    }
-}
-
-private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
     }
 }

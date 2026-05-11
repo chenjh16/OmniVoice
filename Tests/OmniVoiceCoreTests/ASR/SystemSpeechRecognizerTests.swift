@@ -117,7 +117,8 @@ struct SystemSpeechRecognizerTests {
     func liveASRCoordinatorBuffersInstallsPreviewAndFinishes() async throws {
         let coordinator = LiveASRCoordinator(bufferLimitSeconds: 2)
         let chunk = AudioSampleChunk(samples: Array(repeating: 0.1, count: 1_600), sampleRate: 16_000)
-        let session = FakeLiveASRSession(result: ASRRecognitionResult(text: "final draft"))
+        let session = FakeLiveASRSession(result: ASRRecognitionResult(text: "草稿 preview"))
+        let start = Date(timeIntervalSince1970: 100)
 
         coordinator.prepareForStart()
         #expect(coordinator.gateState == .notStarted)
@@ -130,16 +131,18 @@ struct SystemSpeechRecognizerTests {
         let hiddenPreview = coordinator.acceptPreview(
             LiveASRUpdate(text: "  hidden evidence  ", isFinal: false),
             isRecording: true,
-            previewEnabled: false
+            previewEnabled: false,
+            now: start
         )
         #expect(hiddenPreview == nil)
-        #expect(coordinator.previewText == "")
+        #expect(coordinator.previewText == "hidden evidence")
         #expect(coordinator.gateState == .sawText(characterCount: 15))
 
         let preview = coordinator.acceptPreview(
             LiveASRUpdate(text: "  草稿 preview  ", isFinal: false),
             isRecording: true,
-            previewEnabled: true
+            previewEnabled: true,
+            now: start.addingTimeInterval(0.2)
         )
         #expect(preview == "草稿 preview")
         #expect(coordinator.previewText == "草稿 preview")
@@ -148,9 +151,75 @@ struct SystemSpeechRecognizerTests {
         let finalTask = coordinator.makeFinalTask(useForSystemPipeline: true)
         let task = try #require(finalTask)
         let result = try await task.value
-        #expect(result.text == "final draft")
+        #expect(result.text == "草稿 preview")
         #expect(session.finishCount == 1)
         #expect(coordinator.gateState == .notStarted)
+    }
+
+    @MainActor
+    @Test
+    func liveASRCoordinatorAccumulatesPreviewTextAcrossSegments() async throws {
+        let coordinator = LiveASRCoordinator(bufferLimitSeconds: 2)
+        let session = FakeLiveASRSession(result: ASRRecognitionResult(text: "第二段内容"))
+        let start = Date(timeIntervalSince1970: 200)
+
+        coordinator.prepareForStart()
+        coordinator.beginPreparation(Task {})
+        #expect(coordinator.install(session, isRecording: true) == .installed(bufferOverflowed: false))
+
+        let first = coordinator.acceptPreview(
+            LiveASRUpdate(text: "第一段内容", isFinal: false),
+            isRecording: true,
+            previewEnabled: true,
+            now: start
+        )
+        #expect(first == "第一段内容")
+
+        let second = coordinator.acceptPreview(
+            LiveASRUpdate(text: "第二段内容", isFinal: false),
+            isRecording: true,
+            previewEnabled: true,
+            now: start.addingTimeInterval(1.5)
+        )
+        #expect(second == "第一段内容第二段内容")
+        #expect(coordinator.previewText == "第一段内容第二段内容")
+
+        let finalTask = try #require(coordinator.makeFinalTask(useForSystemPipeline: true))
+        let result = try await finalTask.value
+        #expect(result.text == "第一段内容第二段内容")
+    }
+
+    @MainActor
+    @Test
+    func liveASRCoordinatorAccumulatesWhenPreviewIsDisabled() async throws {
+        let coordinator = LiveASRCoordinator(bufferLimitSeconds: 2)
+        let session = FakeLiveASRSession(result: ASRRecognitionResult(text: "second segment"))
+        let start = Date(timeIntervalSince1970: 300)
+
+        coordinator.prepareForStart()
+        coordinator.beginPreparation(Task {})
+        #expect(coordinator.install(session, isRecording: true) == .installed(bufferOverflowed: false))
+
+        let first = coordinator.acceptPreview(
+            LiveASRUpdate(text: "first segment", isFinal: false),
+            isRecording: true,
+            previewEnabled: false,
+            now: start
+        )
+        let second = coordinator.acceptPreview(
+            LiveASRUpdate(text: "second segment", isFinal: false),
+            isRecording: true,
+            previewEnabled: false,
+            now: start.addingTimeInterval(1.5)
+        )
+
+        #expect(first == nil)
+        #expect(second == nil)
+        #expect(coordinator.previewText == "first segment second segment")
+
+        let finalTask = try #require(coordinator.makeFinalTask(useForSystemPipeline: true))
+        let result = try await finalTask.value
+        #expect(result.text == "first segment second segment")
     }
 
     @MainActor
@@ -162,8 +231,14 @@ struct SystemSpeechRecognizerTests {
 
         coordinator.prepareForStart()
         coordinator.beginPreparation(Task {})
+        _ = coordinator.acceptPreview(
+            LiveASRUpdate(text: "stale preview", isFinal: false),
+            isRecording: true,
+            previewEnabled: true
+        )
         #expect(coordinator.append(chunk, shouldRun: true) == .bufferOverflowed(limitSeconds: 0.01))
         #expect(coordinator.gateState == .bufferOverflowed)
+        #expect(coordinator.previewText == "")
         #expect(coordinator.install(session, isRecording: true) == .installed(bufferOverflowed: true))
         #expect(coordinator.makeFinalTask(useForSystemPipeline: true) == nil)
         #expect(session.cancelCount == 1)

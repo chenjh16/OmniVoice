@@ -24,8 +24,6 @@ final class CapsuleBackgroundView: NSView {
         }
     }
 
-    private var nativeGlassView: NSView?
-    private var nativeGlassScrimView: GlassScrimView?
     var onEffectiveAppearanceChanged: (() -> Void)?
     var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal, role: .hud) {
         didSet {
@@ -40,48 +38,33 @@ final class CapsuleBackgroundView: NSView {
         min(cornerRadiusOverride ?? bounds.height / 2, min(bounds.width, bounds.height) / 2)
     }
 
+    private lazy var nativeGlassBackplate = NativeGlassBackplate(owner: self)
+    private var nativeGlassDescriptor: NativeGlassBackplateDescriptor {
+        NativeGlassBackplateDescriptor(
+            surface: surface,
+            role: .hud,
+            status: nativeGlassStatusTone,
+            readability: glassReadability,
+            cornerRadius: currentCornerRadius
+        )
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let radius = currentCornerRadius
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
-        switch (surface, statusStyle) {
-        case (.darkCapsule, .normal):
-            NSColor(calibratedRed: 0.035, green: 0.039, blue: 0.047, alpha: 0.97).setFill()
+        let statusTone = nativeGlassStatusTone
+        if let fillColor = SurfaceThemeTokens.capsuleFillColor(surface: surface, status: statusTone) {
+            fillColor.setFill()
             path.fill()
-        case (.darkCapsule, .warning):
-            NSColor(calibratedRed: 0.240, green: 0.115, blue: 0.055, alpha: 0.98).setFill()
-            path.fill()
-        case (.lightCapsule, .normal):
-            NSColor(calibratedRed: 0.985, green: 0.977, blue: 0.948, alpha: 0.98).setFill()
-            path.fill()
-        case (.lightCapsule, .warning):
-            NSColor(calibratedRed: 1.0, green: 0.895, blue: 0.770, alpha: 0.98).setFill()
-            path.fill()
-        case (.fallbackGlass, .normal):
-            NSColor(calibratedWhite: 1.0, alpha: 0.46).setFill()
-            path.fill()
-        case (.fallbackGlass, .warning):
-            NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.56, alpha: 0.58).setFill()
-            path.fill()
-        case (.nativeGlass, _):
-            break
         }
 
         if surface != .nativeGlass {
             let highlightRect = NSRect(x: bounds.minX + 1, y: bounds.minY + 1, width: bounds.width - 2, height: bounds.height * 0.46)
-            NSColor.white.withAlphaComponent(statusStyle == .warning ? 0.085 : 0.050).setFill()
+            SurfaceThemeTokens.capsuleHighlightColor(status: statusTone).setFill()
             NSBezierPath(roundedRect: highlightRect, xRadius: radius, yRadius: radius).fill()
         }
 
-        let strokeColor: NSColor = switch surface {
-        case .darkCapsule:
-            NSColor.white.withAlphaComponent(statusStyle == .warning ? 0.22 : 0.15)
-        case .lightCapsule:
-            NSColor.black.withAlphaComponent(statusStyle == .warning ? 0.17 : 0.11)
-        case .fallbackGlass, .nativeGlass:
-            surface == .nativeGlass
-                ? NSColor.white.withAlphaComponent(statusStyle == .warning ? 0.34 : 0.28)
-                : NSColor.black.withAlphaComponent(statusStyle == .warning ? 0.20 : 0.13)
-        }
+        let strokeColor = SurfaceThemeTokens.surfaceStrokeColor(role: .hud, surface: surface, status: statusTone)
         strokeColor.setStroke()
         path.lineWidth = 0.8
         path.stroke()
@@ -98,76 +81,16 @@ final class CapsuleBackgroundView: NSView {
     }
 
     private func updateNativeGlassAppearance() {
-        guard #available(macOS 26.0, *) else {
-            return
-        }
-        if let glass = nativeGlassView as? NSGlassEffectView {
-            glass.style = NativeGlassSurfaceStyle.glassStyle(role: .hud, status: nativeGlassStatusTone)
-            glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: nativeGlassStatusTone, readability: glassReadability)
-            glass.alphaValue = 1
-        } else if let effect = nativeGlassView as? NSVisualEffectView {
-            effect.alphaValue = glassReadability.materialAlpha
-            effect.appearance = NSAppearance(named: .darkAqua)
-        }
-        applyLiquidGlassOverlay(to: nativeGlassScrimView)
+        nativeGlassBackplate.updateAppearance(nativeGlassDescriptor)
     }
 
     private func updateNativeGlassCornerRadius() {
-        if #available(macOS 26.0, *),
-           let glass = nativeGlassView as? NSGlassEffectView {
-            glass.cornerRadius = currentCornerRadius
-        } else if let effect = nativeGlassView as? NSVisualEffectView {
-            effect.layer?.cornerRadius = currentCornerRadius
-        }
-        nativeGlassScrimView?.cornerRadius = currentCornerRadius
+        nativeGlassBackplate.updateCornerRadius(nativeGlassDescriptor)
     }
 
     private func configureNativeGlassIfNeeded() {
-        nativeGlassView?.removeFromSuperview()
-        nativeGlassView = nil
-        nativeGlassScrimView?.removeFromSuperview()
-        nativeGlassScrimView = nil
-        guard surface == .nativeGlass,
-              #available(macOS 26.0, *) else {
-            needsDisplay = true
-            return
-        }
-        let glass = NSGlassEffectView(frame: bounds)
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.cornerRadius = currentCornerRadius
-        glass.style = NativeGlassSurfaceStyle.glassStyle(role: .hud, status: nativeGlassStatusTone)
-        glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: nativeGlassStatusTone, readability: glassReadability)
-        glass.alphaValue = 1
-        addSubview(glass, positioned: .below, relativeTo: nil)
-        NSLayoutConstraint.activate([
-            glass.leadingAnchor.constraint(equalTo: leadingAnchor),
-            glass.trailingAnchor.constraint(equalTo: trailingAnchor),
-            glass.topAnchor.constraint(equalTo: topAnchor),
-            glass.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-        let scrim = GlassScrimView()
-        scrim.translatesAutoresizingMaskIntoConstraints = false
-        scrim.cornerRadius = currentCornerRadius
-        applyLiquidGlassOverlay(to: scrim)
-        addSubview(scrim, positioned: .above, relativeTo: glass)
-        NSLayoutConstraint.activate([
-            scrim.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrim.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrim.topAnchor.constraint(equalTo: topAnchor),
-            scrim.bottomAnchor.constraint(equalTo: bottomAnchor)
-        ])
-        nativeGlassView = glass
-        nativeGlassScrimView = scrim
+        nativeGlassBackplate.configureIfNeeded(nativeGlassDescriptor)
         needsDisplay = true
-    }
-
-    private func applyLiquidGlassOverlay(to scrim: GlassScrimView?) {
-        guard let scrim else { return }
-        let status = nativeGlassStatusTone
-        scrim.color = NativeGlassSurfaceStyle.overlayColor(status: status, readability: glassReadability)
-        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha(role: .hud, status: status)
-        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha(role: .hud, status: status)
-        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: status, role: .hud)
     }
 
     private var nativeGlassStatusTone: HUDStatusTone {

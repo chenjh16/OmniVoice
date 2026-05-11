@@ -6,18 +6,14 @@ extension ConfigurationTests {
 
     @Test
     func configValidationLoadAndSnapshotExportSupportHotReloadFallback() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-hot-reload-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        let loader = ConfigLoader(configFileURL: configURL)
+        let fixture = try configFixture(slug: "omnivoice-hot-reload")
+        let loader = fixture.loader
 
-        try Data("{ nope".utf8).write(to: configURL)
+        try Data("{ nope".utf8).write(to: fixture.configURL)
         #expect(loader.loadValidConfigWithoutRepair() == .invalid(["unreadable"]))
 
         let valid = ConfigTemplateBuilder.template(uiLanguage: .english)
-        try Data(valid.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        try fixture.write(valid)
         let loaded: MimoConfig
         switch loader.loadValidConfigWithoutRepair() {
         case .valid(let config):

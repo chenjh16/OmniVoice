@@ -24,6 +24,37 @@ struct ChatCompletionStreamStages {
     )
 }
 
+struct ChatCompletionStreamDiagnosticContext {
+    let stage: String
+    let httpStatus: Int?
+    let contentType: String?
+    let sseChunkCount: Int
+    let deltaCharacterCount: Int
+    let finishReason: String?
+    let cancellationState: String?
+    let error: MimoAPIError?
+
+    init(
+        stage: String,
+        httpStatus: Int? = nil,
+        contentType: String? = nil,
+        sseChunkCount: Int = 0,
+        deltaCharacterCount: Int = 0,
+        finishReason: String? = nil,
+        cancellationState: String? = nil,
+        error: MimoAPIError? = nil
+    ) {
+        self.stage = stage
+        self.httpStatus = httpStatus
+        self.contentType = contentType
+        self.sseChunkCount = sseChunkCount
+        self.deltaCharacterCount = deltaCharacterCount
+        self.finishReason = finishReason
+        self.cancellationState = cancellationState
+        self.error = error
+    }
+}
+
 struct ChatCompletionStreamRunner {
     let session: URLSession
     let request: URLRequest
@@ -32,7 +63,7 @@ struct ChatCompletionStreamRunner {
     let classifyHTTPError: (Int, String?) -> MimoAPIError
     let classifyServerError: (String) -> MimoAPIError
     let mapNetworkError: (Error) -> MimoAPIError
-    let makeDiagnostic: (String, Int?, String?, Int, Int, String?, String?, MimoAPIError?) -> RuntimeDiagnostic
+    let makeDiagnostic: (ChatCompletionStreamDiagnosticContext) -> RuntimeDiagnostic
     let validateFinalText: (String) -> MimoAPIError?
     let emit: (RuntimeDiagnostic) -> Void
     let onDelta: @Sendable (String) -> Void
@@ -46,13 +77,13 @@ struct ChatCompletionStreamRunner {
             (bytes, response) = try await session.bytes(for: request)
         } catch {
             let mapped = mapNetworkError(error)
-            emit(makeDiagnostic(stages.initial, nil, nil, 0, 0, nil, nil, mapped))
+            emit(makeDiagnostic(.init(stage: stages.initial, error: mapped)))
             throw mapped
         }
 
         guard let http = response as? HTTPURLResponse else {
             let error = MimoAPIError.invalidResponse
-            emit(makeDiagnostic(stages.http, nil, nil, 0, 0, nil, nil, error))
+            emit(makeDiagnostic(.init(stage: stages.http, error: error)))
             throw error
         }
 
@@ -60,7 +91,7 @@ struct ChatCompletionStreamRunner {
         guard (200..<300).contains(http.statusCode) else {
             let preview = await Self.readErrorPreview(from: bytes)
             let error = classifyHTTPError(http.statusCode, preview)
-            emit(makeDiagnostic(stages.http, http.statusCode, contentType, 0, 0, nil, nil, error))
+            emit(makeDiagnostic(.init(stage: stages.http, httpStatus: http.statusCode, contentType: contentType, error: error)))
             throw error
         }
         onPhase(.responseReceived)
@@ -89,11 +120,11 @@ struct ChatCompletionStreamRunner {
                 return
             case .malformedJSON(let payload):
                 let error = MimoAPIError.malformedSSE(SecretRedactor.redact(String(payload.prefix(240))))
-                emit(makeDiagnostic(stages.sse, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, nil, nil, error))
+                emit(makeDiagnostic(.init(stage: stages.sse, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, error: error)))
                 throw error
             case .serverError(let info):
                 let error = classifyServerError(info.redactedDescription)
-                emit(makeDiagnostic(stages.sse, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, nil, nil, error))
+                emit(makeDiagnostic(.init(stage: stages.sse, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, error: error)))
                 throw error
             }
         }
@@ -104,21 +135,21 @@ struct ChatCompletionStreamRunner {
             if !allowEmptyFinalText {
                 if deltaCharacterCount == 0 {
                     let error = MimoAPIError.noDeltaContent
-                    emit(makeDiagnostic(stages.complete, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, finishReason, nil, error))
+                    emit(makeDiagnostic(.init(stage: stages.complete, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, finishReason: finishReason, error: error)))
                     throw error
                 }
                 if trimmed.isEmpty {
                     let error = MimoAPIError.emptyFinalText
-                    emit(makeDiagnostic(stages.complete, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, finishReason, nil, error))
+                    emit(makeDiagnostic(.init(stage: stages.complete, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, finishReason: finishReason, error: error)))
                     throw error
                 }
             }
             if let error = validateFinalText(trimmed) {
-                emit(makeDiagnostic(stages.complete, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, finishReason, nil, error))
+                emit(makeDiagnostic(.init(stage: stages.complete, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, finishReason: finishReason, error: error)))
                 throw error
             }
             onPhase(.completed)
-            emit(makeDiagnostic(stages.complete, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, finishReason, nil, nil))
+            emit(makeDiagnostic(.init(stage: stages.complete, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, finishReason: finishReason)))
             return trimmed
         }
 
@@ -126,7 +157,7 @@ struct ChatCompletionStreamRunner {
             for try await line in bytes.lines {
                 if Task.isCancelled {
                     let error = MimoAPIError.cancelled
-                    emit(makeDiagnostic(stages.stream, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, nil, "task_cancelled", error))
+                    emit(makeDiagnostic(.init(stage: stages.stream, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, cancellationState: "task_cancelled", error: error)))
                     throw error
                 }
                 if line.hasPrefix("data:") {
@@ -143,7 +174,7 @@ struct ChatCompletionStreamRunner {
             throw error
         } catch {
             let mapped = mapNetworkError(error)
-            emit(makeDiagnostic(stages.stream, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, nil, nil, mapped))
+            emit(makeDiagnostic(.init(stage: stages.stream, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, error: mapped)))
             throw mapped
         }
 
@@ -155,7 +186,7 @@ struct ChatCompletionStreamRunner {
         }
 
         let error = MimoAPIError.streamEndedBeforeCompletion
-        emit(makeDiagnostic(stages.stream, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, nil, nil, error))
+        emit(makeDiagnostic(.init(stage: stages.stream, httpStatus: http.statusCode, contentType: contentType, sseChunkCount: sseChunkCount, deltaCharacterCount: deltaCharacterCount, error: error)))
         throw error
     }
 

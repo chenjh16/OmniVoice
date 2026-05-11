@@ -2,10 +2,51 @@ import AppKit
 import Foundation
 
 @MainActor
-final class MenuActionRouter {
-    private unowned let coordinator: AppCoordinator
+protocol MenuActionRoutingRuntime: AnyObject {
+    var globalStopActive: Bool { get }
+    var settings: AppCoordinatorSettings { get }
+    var config: MimoConfig { get }
+    var strings: UIStrings { get }
+    var hud: DictationHUDController { get }
+    var actionPanel: ActionPanelController { get }
+    var eventTap: EventTapController { get }
+    var warningDuration: TimeInterval { get }
+    var continuousRecordingDoubleTapSupported: Bool { get }
+    var currentPipelineModel: AllowedSpeechModel { get }
+    var tapStatus: String? { get set }
 
-    init(coordinator: AppCoordinator) {
+    func stopAllFeatures()
+    func reenable()
+    func rebuildMenu()
+    func persistCurrentPreferences() -> Bool
+    func selectObservedModelIfNeeded(for mode: TranscriptionPipelineMode)
+    func persistModelAndPipelineSettings(activeSourceID: String?)
+    func preferredActiveSourceID(for model: AllowedSpeechModel, mode: TranscriptionPipelineMode) -> String?
+    func applyPendingConfigHotReloadIfNeeded()
+    func cancelTriggerCapture(updateView: Bool, restartListening: Bool)
+    func applyTriggerSelection(_ trigger: TriggerKey)
+    func resetContinuousRecordingTriggerState(preserveIgnoredUp: Bool)
+}
+
+extension MenuActionRoutingRuntime {
+    func persistModelAndPipelineSettings() {
+        persistModelAndPipelineSettings(activeSourceID: nil)
+    }
+
+    func cancelTriggerCapture(restartListening: Bool) {
+        cancelTriggerCapture(updateView: true, restartListening: restartListening)
+    }
+
+    func resetContinuousRecordingTriggerState() {
+        resetContinuousRecordingTriggerState(preserveIgnoredUp: false)
+    }
+}
+
+@MainActor
+final class MenuActionRouter {
+    private unowned let coordinator: any MenuActionRoutingRuntime
+
+    init(coordinator: any MenuActionRoutingRuntime) {
         self.coordinator = coordinator
     }
 

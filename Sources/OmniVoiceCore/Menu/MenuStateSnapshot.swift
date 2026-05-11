@@ -26,7 +26,7 @@ struct MenuStateSnapshot {
     init(coordinator: AppCoordinator) {
         let settings = coordinator.settings
         permissionSnapshot = PermissionChecker.snapshot()
-        displayConfig = coordinator.config.resolvingSource(using: coordinator.sourceLatencyResults)
+        displayConfig = coordinator.config.resolvingSource(using: coordinator.sourceLatencyRuntime.results)
         globalStopActive = coordinator.globalStopActive
         listeningEnabled = settings.listeningEnabled
         statusTitle = coordinator.statusTitle

@@ -1,32 +1,37 @@
 import Foundation
 
+struct ChatCompletionThinking: Encodable {
+    let type: String
+}
+
+struct ChatCompletionMessage<Content: Encodable>: Encodable {
+    let role: String
+    let content: Content
+
+    init(role: String = "user", content: Content) {
+        self.role = role
+        self.content = content
+    }
+}
+
 struct ChatCompletionRequest: Encodable {
     let model: String
     let stream = true
     let temperature = 0
-    let thinking: Thinking?
+    let thinking: ChatCompletionThinking?
     let modalities: [String]?
-    let messages: [Message]
+    let messages: [ChatCompletionMessage<[ContentBlock]>]
 
     init(model: String, instruction: String, base64WAV: String, profile: ModelRequestProfile) {
         self.model = model
-        self.thinking = profile.sendsMimoThinkingDisabled ? Thinking(type: "disabled") : nil
+        self.thinking = profile.sendsMimoThinkingDisabled ? ChatCompletionThinking(type: "disabled") : nil
         self.modalities = profile.sendsTextModalities ? ["text"] : nil
         self.messages = [
-            Message(content: [
+            ChatCompletionMessage(content: [
                 .text(instruction),
                 .inputAudio(data: base64WAV, format: "wav")
             ])
         ]
-    }
-
-    struct Thinking: Encodable {
-        let type: String
-    }
-
-    struct Message: Encodable {
-        let role = "user"
-        let content: [ContentBlock]
     }
 
     enum ContentBlock: Encodable {
@@ -64,24 +69,18 @@ struct TextChatCompletionRequest: Encodable {
     let model: String
     let stream = true
     let temperature = 0
-    let thinking: Thinking?
-    let messages: [Message]
+    let thinking: ChatCompletionThinking?
+    let messages: [ChatCompletionMessage<String>]
 
     init(model: String, instruction: String, profile: ModelRequestProfile) {
         self.model = model
-        self.thinking = profile.sendsMimoThinkingDisabled ? Thinking(type: "disabled") : nil
+        self.thinking = profile.sendsMimoThinkingDisabled ? ChatCompletionThinking(type: "disabled") : nil
         self.messages = [
-            Message(role: "system", content: "You are a careful speech dictation post-processor. Output only the final text."),
-            Message(role: "user", content: instruction)
+            ChatCompletionMessage(
+                role: "system",
+                content: "You are a careful speech dictation post-processor. Output only the final text."
+            ),
+            ChatCompletionMessage(role: "user", content: instruction)
         ]
-    }
-
-    struct Thinking: Encodable {
-        let type: String
-    }
-
-    struct Message: Encodable {
-        let role: String
-        let content: String
     }
 }

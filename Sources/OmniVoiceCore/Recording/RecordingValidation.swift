@@ -100,6 +100,39 @@ public enum RecordingValidator {
     }
 }
 
+public enum RecordingResultValidator {
+    public static func validate(
+        durationSeconds: Double,
+        overallRMS: Float,
+        minimumDurationSeconds: Double = RecordingValidator.minimumDurationSeconds,
+        policy: RecordingValidationPolicy = .voiceGated
+    ) throws {
+        try validate(RecordingValidator.validate(
+            durationSeconds: durationSeconds,
+            overallRMS: overallRMS,
+            minimumDurationSeconds: minimumDurationSeconds,
+            policy: policy
+        ))
+    }
+
+    public static func validate(_ result: RecordingValidationResult) throws {
+        if let error = audioRecorderError(for: result.status) {
+            throw error
+        }
+    }
+
+    public static func audioRecorderError(for status: RecordingValidationResult.Status) -> AudioRecorderError? {
+        switch status {
+        case .valid:
+            return nil
+        case .tooShort:
+            return .tooShort
+        case .tooQuiet:
+            return .tooQuiet
+        }
+    }
+}
+
 public enum ListeningHUDRevealPlanner {
     public static let defaultDelaySeconds: TimeInterval = HUDRevealDelay.defaultDelay.seconds
 

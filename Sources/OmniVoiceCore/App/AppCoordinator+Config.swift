@@ -181,17 +181,15 @@ extension AppCoordinator {
     }
 
     func scheduleLatencyChecks() {
-        latencyTimer?.invalidate()
-        latencyTimer = nil
+        sourceLatencyRuntime.invalidateTimer()
         guard config.latencySettings.interval != .off else { return }
         Task { await refreshSourceLatencies(showStatus: false) }
         guard let seconds = config.latencySettings.interval.seconds else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(seconds), repeats: true) { [weak self] _ in
+        sourceLatencyRuntime.timer.schedule(interval: TimeInterval(seconds), repeats: true) { [weak self] in
             Task { @MainActor in
                 await self?.refreshSourceLatencies(showStatus: false)
             }
         }
-        latencyTimer = timer
     }
 
     func refreshSourceLatencies(showStatus: Bool) async {
@@ -201,31 +199,11 @@ extension AppCoordinator {
             }
             return
         }
-        let sourceJobs = config.sources.compactMap { source -> (source: MimoConfigSource, config: MimoConfig)? in
-            guard let sourceConfig = config.selectingSource(source.id) else { return nil }
-            return (source, sourceConfig)
-        }
-        let sourceOrder = Dictionary(uniqueKeysWithValues: sourceJobs.enumerated().map { ($0.element.source.id, $0.offset) })
-        let orderedResults = await withTaskGroup(
-            of: (source: MimoConfigSource, measurement: SourceLatencyMeasurement).self,
-            returning: [(source: MimoConfigSource, measurement: SourceLatencyMeasurement)].self
-        ) { group in
-            for job in sourceJobs {
-                group.addTask {
-                    let measurement = await MimoAPIClient(config: job.config).measureModelsLatency()
-                    return (job.source, measurement)
-                }
-            }
-            var results: [(source: MimoConfigSource, measurement: SourceLatencyMeasurement)] = []
-            for await result in group {
-                results.append(result)
-            }
-            return results.sorted { lhs, rhs in
-                (sourceOrder[lhs.source.id] ?? Int.max) < (sourceOrder[rhs.source.id] ?? Int.max)
-            }
-        }
-        let measurements = Dictionary(uniqueKeysWithValues: orderedResults.map { ($0.source.id, $0.measurement) })
-        for result in orderedResults {
+        let output = await SourceLatencyCoordinator.refresh(
+            config: config,
+            existingMeasurements: sourceLatencyRuntime.results
+        )
+        for result in output.orderedResults {
             let source = result.source
             let measurement = result.measurement
             recordLocalDiagnostic(
@@ -241,13 +219,8 @@ extension AppCoordinator {
                 ]
             )
         }
-        sourceLatencyResults = SourceLatencyRefreshPlanner.mergedMeasurements(
-            existing: sourceLatencyResults,
-            refreshed: measurements,
-            configuredSourceIDs: config.sources.map(\.id)
-        )
-        let resolved = config.resolvingSource(using: sourceLatencyResults)
-        client = makeClient(config: resolved)
+        sourceLatencyRuntime.results = output.mergedMeasurements
+        client = makeClient(config: output.resolvedConfig)
         if showStatus {
             hud.showTransientStatus(strings.connectionLatencyCompleted, duration: warningDuration)
         }
@@ -260,7 +233,7 @@ extension AppCoordinator {
         rebuildMenu()
         Task {
             await refreshSourceLatencies(showStatus: false)
-            client = makeClient(config: config.resolvingSource(using: sourceLatencyResults))
+            client = makeClient(config: config.resolvingSource(using: sourceLatencyRuntime.results))
             let result = await client.testConnection(selectedModel: currentPipelineModel, runAudioProbe: false)
             lastTestConnectionResult = result
             isTestingConnection = false

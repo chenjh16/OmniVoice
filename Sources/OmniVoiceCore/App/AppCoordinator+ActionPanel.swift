@@ -80,7 +80,7 @@ extension AppCoordinator {
             ActionPanelStyleOption(
                 selection: descriptor.selection,
                 title: strings.styleMenuItem(descriptor),
-                tooltip: tooltip(for: descriptor)
+                tooltip: strings.transcriptionStyleTooltip(descriptor)
             )
         }
     }

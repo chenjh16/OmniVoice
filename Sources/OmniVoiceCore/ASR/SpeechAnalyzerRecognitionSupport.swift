@@ -114,47 +114,7 @@ final class SpeechAnalyzerAudioChunkConverter: @unchecked Sendable {
         guard let targetFormat else {
             return sourceBuffer
         }
-        if Self.formatsMatch(sourceBuffer.format, targetFormat) {
-            return sourceBuffer
-        }
-        guard let converter = AVAudioConverter(from: sourceBuffer.format, to: targetFormat) else {
-            return nil
-        }
-        let ratio = targetFormat.sampleRate / max(sourceBuffer.format.sampleRate, 1)
-        let frameCapacity = AVAudioFrameCount(ceil(Double(sourceBuffer.frameLength) * ratio) + 1_024)
-        guard let targetBuffer = AVAudioPCMBuffer(
-            pcmFormat: targetFormat,
-            frameCapacity: max(frameCapacity, 1)
-        ) else {
-            return nil
-        }
-        var didProvideInput = false
-        var conversionError: NSError?
-        let status = converter.convert(to: targetBuffer, error: &conversionError) { _, outStatus in
-            if didProvideInput {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            didProvideInput = true
-            outStatus.pointee = .haveData
-            return sourceBuffer
-        }
-        guard conversionError == nil else { return nil }
-        switch status {
-        case .haveData, .inputRanDry, .endOfStream:
-            return targetBuffer.frameLength > 0 ? targetBuffer : nil
-        case .error:
-            return nil
-        @unknown default:
-            return nil
-        }
-    }
-
-    private static func formatsMatch(_ lhs: AVAudioFormat, _ rhs: AVAudioFormat) -> Bool {
-        lhs.commonFormat == rhs.commonFormat &&
-        lhs.sampleRate == rhs.sampleRate &&
-        lhs.channelCount == rhs.channelCount &&
-        lhs.isInterleaved == rhs.isInterleaved
+        return AudioBufferConverter.convertSingleBuffer(sourceBuffer, to: targetFormat)
     }
 }
 
@@ -235,13 +195,5 @@ final class SpeechAnalyzerLiveRecognitionSession: LiveSystemSpeechRecognitionSes
         Task {
             await analyzer.cancelAndFinishNow()
         }
-    }
-}
-
-private extension NSLock {
-    func withLock<T>(_ body: () throws -> T) rethrows -> T {
-        lock()
-        defer { unlock() }
-        return try body()
     }
 }

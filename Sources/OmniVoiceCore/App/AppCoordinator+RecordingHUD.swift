@@ -5,19 +5,16 @@ extension AppCoordinator {
     func scheduleListeningHUDReveal() {
         cancelListeningHUDRevealTimer()
         listeningHUDShownForCurrentRecording = false
-        listeningHUDRevealTimer = Timer.scheduledTimer(
-            withTimeInterval: settings.hudRevealDelay.seconds,
+        recordingTimingRuntime.listeningHUDRevealTimer.schedule(
+            interval: settings.hudRevealDelay.seconds,
             repeats: false
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.revealListeningHUDIfNeeded()
-            }
+        ) { [weak self] in
+            self?.revealListeningHUDIfNeeded()
         }
     }
 
     func revealListeningHUDIfNeeded() {
-        listeningHUDRevealTimer?.invalidate()
-        listeningHUDRevealTimer = nil
+        recordingTimingRuntime.listeningHUDRevealTimer.cancel()
         guard ListeningHUDRevealPlanner.shouldReveal(
             isRecording: state == .recording,
             cancelled: false
@@ -34,8 +31,7 @@ extension AppCoordinator {
     }
 
     func cancelListeningHUDRevealTimer() {
-        listeningHUDRevealTimer?.invalidate()
-        listeningHUDRevealTimer = nil
+        recordingTimingRuntime.listeningHUDRevealTimer.cancel()
     }
 
     func resetListeningHUDRevealState() {

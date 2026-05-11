@@ -56,8 +56,6 @@ struct MenuPermissionTests {
         #expect(UIStrings(language: .chinese).finishingRecognition == "正在完成识别")
         #expect(UIStrings(language: .english).finishingRecognition == "Finishing recognition")
         #expect(UIStrings(language: .english).openSpeechRecognitionSettings == "Open Speech Recognition Settings")
-        #expect(UIStrings(language: .chinese).pipelineModeTitle(.systemASRTextLLM) == "转写模式：语音识别 + 文本转写")
-        #expect(UIStrings(language: .chinese).pipelineModeTitle(.systemASROnly) == "转写模式：仅系统 ASR")
         #expect(UIStrings(language: .chinese).transcriptionSummaryTitle(mode: .inputAudio, model: .mimoV25) == "转写：音频直转 · mimo-v2.5")
         #expect(UIStrings(language: .chinese).transcriptionSummaryTitle(
             mode: .systemASROnly,
@@ -70,8 +68,6 @@ struct MenuPermissionTests {
             MimoConfig(activeSourceID: "sgp", pipelineMode: .systemASROnly),
             mode: .systemASROnly
         ) == "API 来源：仅系统 ASR")
-        #expect(UIStrings(language: .english).inputAudioModelTitle(.mimoV2Omni) == "Input Audio Model: mimo-v2-omni")
-        #expect(UIStrings(language: .chinese).textLLMModelTitle(.mimoV25) == "文本模型：mimo-v2.5")
         #expect(UIStrings(language: .english).systemASREngineTitle(.classicSpeech) == "Recognition Engine: Classic Speech")
         #expect(UIStrings(language: .chinese).systemASREngineTitle(.appleOnlineSpeech) == "识别引擎：Apple 在线识别")
         #expect(UIStrings(language: .chinese).systemASRNoAPIBaseURL == "系统 ASR（不使用 API）")
@@ -266,21 +262,16 @@ struct MenuPermissionTests {
     }
 
     @Test
-    func settingsDefaultsUseChineseUIAndAutoInsert() {
-        let suiteName = "omnivoice-defaults-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let settings = SettingsStore(defaults: defaults)
-        #expect(defaults.string(forKey: SettingsStore.Key.uiLanguage) == UILanguage.defaultLanguage.rawValue)
-        #expect(settings.uiLanguage == .chinese)
-        #expect(settings.autoInsert)
-        #expect(settings.transcriptionStyleSelection == .builtIn(.rewrite))
-        #expect(!settings.keywordHintsEnabled)
-        #expect(settings.enabledKeywordGroupIDs.isEmpty)
-        #expect(settings.systemASREngine == .speechAnalyzer)
-        #expect(settings.maxRecordingDuration == .seconds120)
-        #expect(settings.hudRevealDelay == .milliseconds100)
+    func configDefaultsUseChineseUIAndAutoInsert() {
+        let preferences = ConfigPreferences.defaultPreferences(selectedModel: .defaultInputAudioModel)
+        #expect(preferences.uiLanguage == .chinese)
+        #expect(preferences.autoInsert)
+        #expect(preferences.transcriptionStyleSelection == .builtIn(.rewrite))
+        #expect(!preferences.keywordHintsEnabled)
+        #expect(preferences.enabledKeywordGroupIDs.isEmpty)
+        #expect(SystemASRSettings.defaultSettings.engine == .speechAnalyzer)
+        #expect(preferences.maxRecordingDuration == .seconds120)
+        #expect(preferences.hudRevealDelay == .milliseconds100)
     }
 
     @Test

@@ -3,7 +3,7 @@ import Foundation
 
 extension AppCoordinator {
     func handleRecordingTriggerDown() {
-        let action = continuousRecordingStateMachine.triggerDown(
+        let action = continuousRecordingRuntime.stateMachine.triggerDown(
             doubleTapEnabled: shouldUseContinuousRecordingDoubleTap,
             appIsRecording: state == .recording
         )
@@ -19,8 +19,7 @@ extension AppCoordinator {
         case .beginStopTap:
             beginContinuousRecordingStopTap()
         case .enterContinuousRecording:
-            continuousRecordingTapTimeout?.cancel()
-            continuousRecordingTapTimeout = nil
+            continuousRecordingRuntime.tapTimeout.cancel()
             recordLocalDiagnostic(
                 stage: "continuous_recording_started",
                 details: [
@@ -33,7 +32,7 @@ extension AppCoordinator {
 
     func handleRecordingTriggerUp() {
         let tapDuration = recordingStartDate.map { Date().timeIntervalSince($0) }
-        let action = continuousRecordingStateMachine.triggerUp(
+        let action = continuousRecordingRuntime.stateMachine.triggerUp(
             doubleTapEnabled: shouldUseContinuousRecordingDoubleTap,
             appIsRecording: state == .recording,
             tapDuration: tapDuration
@@ -63,22 +62,15 @@ extension AppCoordinator {
     }
 
     func scheduleContinuousRecordingStopFallback() {
-        continuousRecordingStopFallback?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                self?.expireContinuousRecordingStopTap()
-            }
+        continuousRecordingRuntime.stopFallback.schedule(
+            after: ContinuousRecordingStopPlanner.releaseFallbackInterval
+        ) { [weak self] in
+            self?.expireContinuousRecordingStopTap()
         }
-        continuousRecordingStopFallback = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + ContinuousRecordingStopPlanner.releaseFallbackInterval,
-            execute: workItem
-        )
     }
 
     func finishContinuousRecordingStopTap(clearTriggerState: Bool) {
-        continuousRecordingStopFallback?.cancel()
-        continuousRecordingStopFallback = nil
+        continuousRecordingRuntime.stopFallback.cancel()
         if clearTriggerState {
             eventTap.clearCurrentTriggerStateForContinuousRecording()
         }
@@ -90,7 +82,7 @@ extension AppCoordinator {
     }
 
     func expireContinuousRecordingStopTap() {
-        switch continuousRecordingStateMachine.stopReleaseFallback() {
+        switch continuousRecordingRuntime.stateMachine.stopReleaseFallback() {
         case let .finishStopTap(clearTriggerState):
             finishContinuousRecordingStopTap(clearTriggerState: clearTriggerState)
         case .finishRecording:
@@ -101,7 +93,7 @@ extension AppCoordinator {
     }
 
     func scheduleContinuousRecordingSecondTapWindow(firstTapDuration: TimeInterval) {
-        continuousRecordingTapTimeout?.cancel()
+        continuousRecordingRuntime.tapTimeout.cancel()
         let interval = continuousRecordingDoubleTapInterval
         recordLocalDiagnostic(
             stage: "continuous_recording_first_tap_pending",
@@ -111,18 +103,14 @@ extension AppCoordinator {
                 "double_tap_interval_seconds": String(format: "%.3f", interval)
             ]
         )
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                self?.expireContinuousRecordingSecondTapWindow()
-            }
+        continuousRecordingRuntime.tapTimeout.schedule(after: interval) { [weak self] in
+            self?.expireContinuousRecordingSecondTapWindow()
         }
-        continuousRecordingTapTimeout = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: workItem)
     }
 
     func expireContinuousRecordingSecondTapWindow() {
-        continuousRecordingTapTimeout = nil
-        switch continuousRecordingStateMachine.secondTapTimeout() {
+        continuousRecordingRuntime.tapTimeout.cancel()
+        switch continuousRecordingRuntime.stateMachine.secondTapTimeout() {
         case .finishRecording:
             recordLocalDiagnostic(
                 stage: "continuous_recording_second_tap_timeout",
@@ -137,10 +125,7 @@ extension AppCoordinator {
     }
 
     func resetContinuousRecordingTriggerState(preserveIgnoredUp: Bool = false) {
-        continuousRecordingTapTimeout?.cancel()
-        continuousRecordingTapTimeout = nil
-        continuousRecordingStopFallback?.cancel()
-        continuousRecordingStopFallback = nil
-        continuousRecordingStateMachine.reset(preserveIgnoredUp: preserveIgnoredUp)
+        continuousRecordingRuntime.cancelTimers()
+        continuousRecordingRuntime.stateMachine.reset(preserveIgnoredUp: preserveIgnoredUp)
     }
 }

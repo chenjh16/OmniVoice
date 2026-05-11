@@ -26,8 +26,7 @@ extension AppCoordinator {
         )
         let listeningHUDWasShown = listeningHUDShownForCurrentRecording
         cancelListeningHUDRevealTimer()
-        maxRecordingTimer?.invalidate()
-        maxRecordingTimer = nil
+        recordingTimingRuntime.maxRecordingTimer.cancel()
 
         let model = automationOptions?.model ?? currentPipelineModel
         let styleDescriptor = automationOptions?.styleSelection.map {

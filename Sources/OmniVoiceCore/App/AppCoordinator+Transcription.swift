@@ -19,55 +19,50 @@ extension AppCoordinator {
         transcriptionTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let finalText: String
+                let outcome: TranscriptionOutcome
                 switch pending.mode {
                 case .inputAudio:
-                    finalText = try await client.transcribe(
-                        wavData: pending.result.wavData,
-                        model: pending.model,
-                        instruction: pending.instruction,
-                        recordingSeconds: pending.result.durationSeconds,
-                        overallRMS: pending.result.overallRMS,
-                        allowEmptyFinalText: false,
-                        onDelta: { [weak self] delta in
-                            DispatchQueue.main.async {
-                                self?.hud.appendTranscriptionDelta(delta)
-                            }
-                        },
-                        onPhase: { [weak self] phase in
-                            DispatchQueue.main.async {
-                                self?.hud.updateTranscriptionRequestPhase(phase)
-                            }
-                        }
-                    )
+                    outcome = try await self.transcribeWithDirectAudio(pending)
                 case .systemASRTextLLM:
-                    finalText = try await self.transcribeWithSystemASRAndTextLLM(pending)
+                    outcome = try await self.transcribeWithSystemASRAndTextLLM(pending)
                 case .systemASROnly:
-                    finalText = try await self.transcribeWithSystemASROnly(pending)
+                    outcome = try await self.transcribeWithSystemASROnly(pending)
                 }
                 if Task.isCancelled { return }
-                await self.finishTranscription(
-                    finalText: finalText,
-                    pending: pending
-                )
-            } catch TranscriptionFlowControl.asrDraftShown {
-                return
+                switch outcome {
+                case .finalText(let finalText):
+                    await self.finishTranscription(
+                        finalText: finalText,
+                        pending: pending
+                    )
+                case .handled:
+                    return
+                }
             } catch {
                 await self.failTranscription(error, pending: pending)
             }
         }
     }
 
-    func transcribeWithSystemASRAndTextLLM(_ pending: PendingTranscription) async throws -> String {
+    func transcribeWithDirectAudio(_ pending: PendingTranscription) async throws -> TranscriptionOutcome {
+        let finalText = try await client.transcribe(
+            wavData: pending.result.wavData,
+            model: pending.model,
+            instruction: pending.instruction,
+            recordingSeconds: pending.result.durationSeconds,
+            overallRMS: pending.result.overallRMS,
+            allowEmptyFinalText: false,
+            onDelta: hudDeltaHandler(),
+            onPhase: hudRequestPhaseHandler()
+        )
+        return .finalText(finalText)
+    }
+
+    func transcribeWithSystemASRAndTextLLM(_ pending: PendingTranscription) async throws -> TranscriptionOutcome {
         let asrResult = try await recognizeSystemASRDraft(for: pending)
         recordLocalDiagnostic(
             stage: "system_asr_complete",
-            details: [
-                "draft_chars": "\(asrResult.text.count)",
-                "low_confidence_segments": "\(asrResult.lowConfidenceSegments.count)",
-                "alternatives": "\(asrResult.alternatives.count)",
-                "apple_online_allowed": asrResult.allowedAppleServerRecognition ? "true" : "false"
-            ]
+            details: ASRRecognitionDiagnosticSummary(result: asrResult).details
         )
         let descriptor = TranscriptionStyleResolver.resolve(
             selection: pending.styleSelection,
@@ -79,39 +74,43 @@ extension AppCoordinator {
             keywordHints: currentSystemASRKeywordHintsContext
         )
         do {
-            return try await client.completeText(
+            let finalText = try await client.completeText(
                 model: pending.model,
                 instruction: prompt,
                 allowEmptyFinalText: false,
-                onDelta: { [weak self] delta in
-                    DispatchQueue.main.async {
-                        self?.hud.appendTranscriptionDelta(delta)
-                    }
-                },
-                onPhase: { [weak self] phase in
-                    DispatchQueue.main.async {
-                        self?.hud.updateTranscriptionRequestPhase(phase)
-                    }
-                }
+                onDelta: hudDeltaHandler(),
+                onPhase: hudRequestPhaseHandler()
             )
+            return .finalText(finalText)
         } catch {
             await showASRDraftAfterTextLLMFailure(asrResult: asrResult, error: error, pending: pending)
-            throw TranscriptionFlowControl.asrDraftShown
+            return .handled
         }
     }
 
-    func transcribeWithSystemASROnly(_ pending: PendingTranscription) async throws -> String {
+    func hudDeltaHandler() -> @Sendable (String) -> Void {
+        { [weak self] delta in
+            DispatchQueue.main.async {
+                self?.hud.appendTranscriptionDelta(delta)
+            }
+        }
+    }
+
+    func hudRequestPhaseHandler() -> @Sendable (TranscriptionRequestPhase) -> Void {
+        { [weak self] phase in
+            DispatchQueue.main.async {
+                self?.hud.updateTranscriptionRequestPhase(phase)
+            }
+        }
+    }
+
+    func transcribeWithSystemASROnly(_ pending: PendingTranscription) async throws -> TranscriptionOutcome {
         let asrResult = try await recognizeSystemASRDraft(for: pending)
         recordLocalDiagnostic(
             stage: "system_asr_only_complete",
-            details: [
-                "draft_chars": "\(asrResult.text.count)",
-                "low_confidence_segments": "\(asrResult.lowConfidenceSegments.count)",
-                "alternatives": "\(asrResult.alternatives.count)",
-                "apple_online_allowed": asrResult.allowedAppleServerRecognition ? "true" : "false"
-            ]
+            details: ASRRecognitionDiagnosticSummary(result: asrResult).details
         )
-        return asrResult.text
+        return .finalText(asrResult.text)
     }
 
     func recognizeSystemASRDraft(for pending: PendingTranscription) async throws -> ASRRecognitionResult {
@@ -120,10 +119,7 @@ extension AppCoordinator {
                 let result = try await liveASRFinalTask.value
                 recordLocalDiagnostic(
                     stage: "live_system_asr_complete",
-                    details: [
-                        "draft_chars": "\(result.text.count)",
-                        "apple_online_allowed": result.allowedAppleServerRecognition ? "true" : "false"
-                    ]
+                    details: ASRRecognitionDiagnosticSummary(result: result).liveDetails
                 )
                 return result
             } catch {
@@ -143,12 +139,7 @@ extension AppCoordinator {
         )
         recordLocalDiagnostic(
             stage: "file_system_asr_complete",
-            details: [
-                "draft_chars": "\(result.text.count)",
-                "low_confidence_segments": "\(result.lowConfidenceSegments.count)",
-                "alternatives": "\(result.alternatives.count)",
-                "apple_online_allowed": result.allowedAppleServerRecognition ? "true" : "false"
-            ]
+            details: ASRRecognitionDiagnosticSummary(result: result).details
         )
         return result
     }
@@ -176,6 +167,7 @@ extension AppCoordinator {
                 liveASRFinalTask: nil
             )
             pendingTranscription = draftPending
+            let summary = ASRRecognitionDiagnosticSummary(result: asrResult)
             recordLocalDiagnostic(
                 stage: "text_llm_failed_after_system_asr",
                 errorKind: diagnosticKind(for: error),
@@ -183,9 +175,9 @@ extension AppCoordinator {
                     "model": pending.model.rawValue,
                     "source": config.resolvedSourceID,
                     "http_status": diagnosticHTTPStatus(for: error) ?? "none",
-                    "asr_draft_chars": "\(asrResult.text.count)",
-                    "low_confidence_segments": "\(asrResult.lowConfidenceSegments.count)",
-                    "alternatives": "\(asrResult.alternatives.count)",
+                    "asr_draft_chars": "\(summary.textCharacterCount)",
+                    "low_confidence_segments": "\(summary.lowConfidenceSegmentCount)",
+                    "alternatives": "\(summary.alternativeCount)",
                     "unsupported_text_model": TextLLMFailureClassifier.isLikelyUnsupportedTextModel(error) ? "true" : "false"
                 ]
             )
@@ -286,108 +278,6 @@ extension AppCoordinator {
         }
         rebuildMenu()
         applyPendingConfigHotReloadIfNeeded()
-    }
-
-    func updateLastDiagnosticInsertion(_ reason: String?) {
-        let diagnostic = RuntimeDiagnostic(
-            stage: "injection_complete",
-            host: "local",
-            insertionFallbackReason: reason,
-            errorKind: reason,
-            details: ["result": reason == nil ? "inserted" : "fallback"]
-        )
-        RuntimeDiagnostic.log(diagnostic)
-        recordDiagnostic(diagnostic)
-    }
-
-    func recordDiagnostic(_ diagnostic: RuntimeDiagnostic) {
-        lastDiagnostic = diagnostic
-        rebuildMenu()
-    }
-
-    func recordLocalDiagnostic(
-        stage: String,
-        errorKind: String? = nil,
-        details: [String: String] = [:]
-    ) {
-        let diagnostic = RuntimeDiagnostic(
-            stage: stage,
-            host: "local",
-            errorKind: errorKind,
-            details: details
-        )
-        RuntimeDiagnostic.log(diagnostic)
-        recordDiagnostic(diagnostic)
-        automationEventSink?.record(AutomationEvent(
-            stage: stage,
-            errorKind: errorKind,
-            details: details
-        ))
-    }
-
-    func recordHUDDiagnostic(stage: String) {
-        recordSurfaceDiagnostic(
-            stage: stage,
-            snapshot: hud.diagnosticSnapshot,
-            screenshotPNGData: hud.renderedPNGData()
-        )
-    }
-
-    func recordActionPanelDiagnostic(stage: String) {
-        recordSurfaceDiagnostic(
-            stage: stage,
-            snapshot: actionPanel.diagnosticSnapshot,
-            screenshotPNGData: actionPanel.renderedPNGData()
-        )
-    }
-
-    func recordSurfaceDiagnostic(
-        stage: String,
-        snapshot: SurfaceDiagnosticSnapshot,
-        screenshotPNGData: Data?
-    ) {
-        guard let frame = snapshot.frame else {
-            recordLocalDiagnostic(
-                stage: stage,
-                errorKind: "\(snapshot.panelType)_not_visible",
-                details: [
-                    "panel_type": snapshot.panelType,
-                    "level": snapshot.levelName,
-                    "is_visible": snapshot.isVisible ? "true" : "false"
-                ]
-            )
-            automationEventSink?.record(AutomationEvent(
-                stage: stage,
-                errorKind: "\(snapshot.panelType)_not_visible",
-                details: [
-                    "panel_type": snapshot.panelType,
-                    "level": snapshot.levelName,
-                    "is_visible": snapshot.isVisible ? "true" : "false"
-                ],
-                surface: snapshot,
-                screenshotPNGData: nil
-            ))
-            return
-        }
-        var details = [
-            "panel_type": snapshot.panelType,
-            "level": snapshot.levelName,
-            "is_visible": snapshot.isVisible ? "true" : "false",
-            "x": String(format: "%.1f", frame.origin.x),
-            "y": String(format: "%.1f", frame.origin.y),
-            "width": String(format: "%.1f", frame.width),
-            "height": String(format: "%.1f", frame.height)
-        ]
-        if let windowNumber = snapshot.windowNumber {
-            details["window_number"] = "\(windowNumber)"
-        }
-        recordLocalDiagnostic(stage: stage, details: details)
-        automationEventSink?.record(AutomationEvent(
-            stage: stage,
-            details: details,
-            surface: snapshot,
-            screenshotPNGData: screenshotPNGData
-        ))
     }
 
     func failTranscription(_ error: Error, pending: PendingTranscription?) async {

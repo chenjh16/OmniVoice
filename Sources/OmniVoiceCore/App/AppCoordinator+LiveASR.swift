@@ -4,7 +4,6 @@ import Foundation
 extension AppCoordinator {
     func startLiveASRIfNeeded() {
         liveASRCoordinator.prepareForStart()
-        guard shouldRunLiveASRForCurrentRecording else { return }
         let configuredEngine = effectiveSystemASREngine
         let primaryEngine = effectiveLiveASREngine
         if primaryEngine != configuredEngine {
@@ -106,7 +105,7 @@ extension AppCoordinator {
     func handleLiveASRChunk(_ chunk: AudioSampleChunk) {
         switch liveASRCoordinator.append(
             chunk,
-            shouldRun: state == .recording && shouldRunLiveASRForCurrentRecording
+            shouldRun: state == .recording
         ) {
         case let .bufferOverflowed(limitSeconds):
             recordLocalDiagnostic(

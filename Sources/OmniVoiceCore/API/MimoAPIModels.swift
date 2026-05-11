@@ -130,7 +130,7 @@ public enum PromptLeakageGuard {
     public static func looksLikePromptLeakage(output: String, instruction: String) -> Bool {
         let displayOutput = collapsedWhitespace(output)
         guard !displayOutput.isEmpty else { return false }
-        if containsHighConfidenceMarker(displayOutput) {
+        if containsHighConfidenceMarker(displayOutput, instruction: instruction) {
             return true
         }
 
@@ -141,18 +141,35 @@ public enum PromptLeakageGuard {
             return false
         }
 
-        return compactOutput.count >= 80 || markerHitCount(in: displayOutput) > 0
+        return compactOutput.count >= 80 || markerHitCount(in: displayOutput, instruction: instruction) > 0
     }
 
-    private static func containsHighConfidenceMarker(_ output: String) -> Bool {
-        markerHitCount(in: output) > 0
+    private static func containsHighConfidenceMarker(_ output: String, instruction: String) -> Bool {
+        markerHitCount(in: output, instruction: instruction) > 0
     }
 
-    private static func markerHitCount(in output: String) -> Int {
+    private static func markerHitCount(in output: String, instruction: String? = nil) -> Int {
         let normalized = collapsedWhitespace(output).lowercased()
-        return highConfidenceMarkers.reduce(0) { count, marker in
+        let markers = highConfidenceMarkers + dynamicMarkers(from: instruction)
+        return markers.reduce(0) { count, marker in
             normalized.contains(collapsedWhitespace(marker).lowercased()) ? count + 1 : count
         }
+    }
+
+    private static func dynamicMarkers(from instruction: String?) -> [String] {
+        guard let instruction else { return [] }
+        return instruction
+            .components(separatedBy: .newlines)
+            .map { line in
+                line
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "-•0123456789. "))
+            }
+            .filter { line in
+                (line.hasSuffix("：") || line.hasSuffix(":")) &&
+                line.count >= 2 &&
+                line.count <= 40
+            }
     }
 
     private static func collapsedWhitespace(_ value: String) -> String {

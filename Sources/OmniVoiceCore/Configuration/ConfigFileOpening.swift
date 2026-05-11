@@ -1,12 +1,12 @@
 import Foundation
 
-public struct ConfigEditorCandidate: Equatable, Sendable {
-    public let displayName: String
-    public let appBundleNames: [String]
-    public let cliNames: [String]
-    public let lineInvocation: ConfigEditorLineInvocation
+struct ConfigEditorCandidate: Equatable, Sendable {
+    let displayName: String
+    let appBundleNames: [String]
+    let cliNames: [String]
+    let lineInvocation: ConfigEditorLineInvocation
 
-    public init(
+    init(
         displayName: String,
         appBundleNames: [String],
         cliNames: [String],
@@ -19,17 +19,17 @@ public struct ConfigEditorCandidate: Equatable, Sendable {
     }
 }
 
-public enum ConfigEditorLineInvocation: Equatable, Sendable {
+enum ConfigEditorLineInvocation: Equatable, Sendable {
     case gotoFlag
     case zedPathSuffix
     case xedLineFlag
     case plainFile
 
-    public var supportsLineNumber: Bool {
+    var supportsLineNumber: Bool {
         self != .plainFile
     }
 
-    public func arguments(fileURL: URL, line: Int, column: Int) -> [String] {
+    func arguments(fileURL: URL, line: Int, column: Int) -> [String] {
         let safeLine = max(1, line)
         let safeColumn = max(1, column)
         switch self {
@@ -45,23 +45,23 @@ public enum ConfigEditorLineInvocation: Equatable, Sendable {
     }
 }
 
-public enum ConfigFileOpenMethod: Equatable, Sendable {
+enum ConfigFileOpenMethod: Equatable, Sendable {
     case applicationBundle(URL, displayName: String)
     case command(URL, displayName: String)
     case systemDefault
 }
 
-public struct ConfigFileOpenPlan: Equatable, Sendable {
-    public let method: ConfigFileOpenMethod
-    public let arguments: [String]
+struct ConfigFileOpenPlan: Equatable, Sendable {
+    let method: ConfigFileOpenMethod
+    let arguments: [String]
 
-    public init(method: ConfigFileOpenMethod, arguments: [String] = []) {
+    init(method: ConfigFileOpenMethod, arguments: [String] = []) {
         self.method = method
         self.arguments = arguments
     }
 }
 
-public enum ConfigFileSection: Equatable, Sendable {
+enum ConfigFileSection: Equatable, Sendable {
     case root
     case sources
     case modelsAudioLLM
@@ -72,8 +72,8 @@ public enum ConfigFileSection: Equatable, Sendable {
     case preferences
 }
 
-public enum ConfigFileLineLocator {
-    public static func lineNumber(in text: String, section: ConfigFileSection) -> Int {
+enum ConfigFileLineLocator {
+    static func lineNumber(in text: String, section: ConfigFileSection) -> Int {
         switch section {
         case .root:
             return 1
@@ -109,8 +109,8 @@ public enum ConfigFileLineLocator {
     }
 }
 
-public enum ConfigFileOpenPlanner {
-    public static let candidates: [ConfigEditorCandidate] = [
+enum ConfigFileOpenPlanner {
+    static let candidates: [ConfigEditorCandidate] = [
         ConfigEditorCandidate(displayName: "Visual Studio Code", appBundleNames: ["Visual Studio Code.app"], cliNames: ["code"], lineInvocation: .gotoFlag),
         ConfigEditorCandidate(displayName: "Cursor", appBundleNames: ["Cursor.app"], cliNames: ["cursor"], lineInvocation: .gotoFlag),
         ConfigEditorCandidate(displayName: "Windsurf", appBundleNames: ["Windsurf.app"], cliNames: ["windsurf"]),
@@ -121,7 +121,7 @@ public enum ConfigFileOpenPlanner {
         ConfigEditorCandidate(displayName: "Xcode", appBundleNames: ["Xcode.app"], cliNames: ["xed"], lineInvocation: .xedLineFlag)
     ]
 
-    public static func plan(
+    static func plan(
         applicationsDirectories: [URL] = defaultApplicationsDirectories(),
         executableDirectories: [URL] = defaultExecutableDirectories(),
         fileManager: FileManager = .default,
@@ -170,14 +170,14 @@ public enum ConfigFileOpenPlanner {
         return ConfigFileOpenPlan(method: .systemDefault)
     }
 
-    public static func defaultApplicationsDirectories() -> [URL] {
+    static func defaultApplicationsDirectories() -> [URL] {
         [
             URL(fileURLWithPath: "/Applications", isDirectory: true),
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
         ]
     }
 
-    public static func defaultExecutableDirectories() -> [URL] {
+    static func defaultExecutableDirectories() -> [URL] {
         [
             URL(fileURLWithPath: "/opt/homebrew/bin", isDirectory: true),
             URL(fileURLWithPath: "/usr/local/bin", isDirectory: true),

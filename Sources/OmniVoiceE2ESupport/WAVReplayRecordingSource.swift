@@ -84,20 +84,12 @@ public final class WAVReplayRecordingSource: ReplayRecordingSource, @unchecked S
 
         let duration = Double(snapshot.3) / Double(WAVFormat.mono16kPCM16.sampleRate)
         let rms = Float(sqrt(snapshot.2 / Double(max(snapshot.3, 1))))
-        let validation = RecordingValidator.validate(
+        try RecordingResultValidator.validate(
             durationSeconds: duration,
             overallRMS: rms,
             minimumDurationSeconds: minimumDurationSeconds,
             policy: validationPolicy
         )
-        switch validation.status {
-        case .valid:
-            break
-        case .tooShort:
-            throw AudioRecorderError.tooShort
-        case .tooQuiet:
-            throw AudioRecorderError.tooQuiet
-        }
 
         let wav = WAVEncoder.encodePCM16WAV(samples: snapshot.1)
         guard WAVEncoder.validatePCM16Mono16kWAV(wav) else {

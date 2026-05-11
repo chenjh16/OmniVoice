@@ -68,26 +68,12 @@ public final class SystemSpeechRecognizer: @unchecked Sendable {
             throw SystemSpeechRecognitionError.recognizerUnavailable
         }
         let request = SFSpeechURLRecognitionRequest(url: audioURL)
-        request.taskHint = .dictation
-        request.shouldReportPartialResults = true
-        if #available(macOS 13.0, *) {
-            request.addsPunctuation = true
-        }
-        let contextualStrings = SystemASRKeywordPlanner.contextualStrings(from: options.keywordHints)
-        request.contextualStrings = contextualStrings
-        let allowsAppleOnlineRecognition = options.engine == .appleOnlineSpeech
-        if !allowsAppleOnlineRecognition {
-            guard recognizer.supportsOnDeviceRecognition else {
-                throw SystemSpeechRecognitionError.onDeviceRecognitionUnavailable
-            }
-            request.requiresOnDeviceRecognition = true
-        }
-        if let languageModel = try? await prepareCustomLanguageModel(
+        let allowsAppleOnlineRecognition = try await configureClassicSpeechRequest(
+            request,
+            recognizer: recognizer,
             locale: locale,
-            keywords: contextualStrings
-        ) {
-            request.customizedLanguageModel = languageModel
-        }
+            options: options
+        )
 
         let session = ClassicSpeechFileRecognitionSession(
             recognizer: recognizer,
@@ -111,6 +97,26 @@ public final class SystemSpeechRecognizer: @unchecked Sendable {
             throw SystemSpeechRecognitionError.recognizerUnavailable
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
+        let allowsAppleOnlineRecognition = try await configureClassicSpeechRequest(
+            request,
+            recognizer: recognizer,
+            locale: locale,
+            options: options
+        )
+        return ClassicSpeechLiveRecognitionSession(
+            recognizer: recognizer,
+            request: request,
+            allowsAppleOnlineRecognition: allowsAppleOnlineRecognition,
+            onUpdate: onUpdate
+        )
+    }
+
+    private func configureClassicSpeechRequest(
+        _ request: SFSpeechRecognitionRequest,
+        recognizer: SFSpeechRecognizer,
+        locale: Locale,
+        options: SystemSpeechRecognitionOptions
+    ) async throws -> Bool {
         request.taskHint = .dictation
         request.shouldReportPartialResults = true
         if #available(macOS 13.0, *) {
@@ -131,12 +137,7 @@ public final class SystemSpeechRecognizer: @unchecked Sendable {
         ) {
             request.customizedLanguageModel = languageModel
         }
-        return ClassicSpeechLiveRecognitionSession(
-            recognizer: recognizer,
-            request: request,
-            allowsAppleOnlineRecognition: allowsAppleOnlineRecognition,
-            onUpdate: onUpdate
-        )
+        return allowsAppleOnlineRecognition
     }
 
     private func ensureAuthorization() async throws {

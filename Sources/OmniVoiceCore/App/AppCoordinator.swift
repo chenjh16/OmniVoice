@@ -1,174 +1,6 @@
 import AppKit
 import Foundation
 
-public enum MenuLayoutMetrics {
-    public static let customViewLeading: CGFloat = 28
-}
-
-struct AccessibilityPermissionRequestOutcome: Sendable {
-    let snapshot: PermissionSnapshot
-    let openedSettingsFallback: Bool
-}
-
-@MainActor
-final class AppCoordinatorSettings {
-    let configStore: AppConfigStore
-    let runtime: SettingsStore
-
-    init(configStore: AppConfigStore, runtime: SettingsStore = .shared) {
-        self.configStore = configStore
-        self.runtime = runtime
-    }
-
-    var selectedModel: AllowedSpeechModel {
-        get { configStore.config.modelCatalogs.inputAudioDefaultModel }
-        set { configStore.updateModelSettingsInMemory(inputAudioModel: newValue) }
-    }
-
-    var selectedTextLLMModel: AllowedSpeechModel {
-        get { configStore.config.modelCatalogs.textLLMDefaultModel }
-        set { configStore.updateModelSettingsInMemory(textLLMModel: newValue) }
-    }
-
-    var pipelineMode: TranscriptionPipelineMode {
-        get { configStore.config.pipelineMode }
-        set { configStore.updateModelSettingsInMemory(pipelineMode: newValue) }
-    }
-
-    var systemASREngine: SystemASREngine {
-        get { configStore.config.systemASRSettings.engine }
-        set {
-            configStore.updateModelSettingsInMemory(
-                systemASRSettings: SystemASRSettings(
-                    engine: newValue,
-                    keywordHintsEnabled: systemASRKeywordHintsEnabled
-                )
-            )
-        }
-    }
-
-    var systemASRKeywordHintsEnabled: Bool {
-        get { configStore.config.systemASRSettings.keywordHintsEnabled }
-        set {
-            configStore.updateModelSettingsInMemory(
-                systemASRSettings: SystemASRSettings(
-                    engine: systemASREngine,
-                    keywordHintsEnabled: newValue
-                )
-            )
-        }
-    }
-
-    var uiLanguage: UILanguage {
-        get { configStore.config.preferences.uiLanguage }
-        set { updatePreferences { $0.updating(uiLanguage: newValue) } }
-    }
-
-    var transcriptionStyleSelection: TranscriptionStyleSelection {
-        get { configStore.config.preferences.transcriptionStyleSelection }
-        set { updatePreferences { $0.updating(transcriptionStyleSelection: newValue) } }
-    }
-
-    var keywordHintsEnabled: Bool {
-        get { configStore.config.preferences.keywordHintsEnabled }
-        set { updatePreferences { $0.updating(keywordHintsEnabled: newValue) } }
-    }
-
-    var enabledKeywordGroupIDs: [String] {
-        get { configStore.config.preferences.enabledKeywordGroupIDs }
-        set { updatePreferences { $0.updating(enabledKeywordGroupIDs: newValue) } }
-    }
-
-    var triggerKey: TriggerKey {
-        get { configStore.config.preferences.triggerKey }
-        set { updatePreferences { $0.updating(triggerKey: newValue) } }
-    }
-
-    var continuousRecordingDoubleTapEnabled: Bool {
-        get { configStore.config.preferences.continuousRecordingDoubleTapEnabled }
-        set { updatePreferences { $0.updating(continuousRecordingDoubleTapEnabled: newValue) } }
-    }
-
-    var minRecordingDuration: MinRecordingDuration {
-        get { configStore.config.preferences.minRecordingDuration }
-        set { updatePreferences { $0.updating(minRecordingDuration: newValue) } }
-    }
-
-    var maxRecordingDuration: MaxRecordingDuration {
-        get { configStore.config.preferences.maxRecordingDuration }
-        set { updatePreferences { $0.updating(maxRecordingDuration: newValue) } }
-    }
-
-    var autoInsert: Bool {
-        get { configStore.config.preferences.autoInsert }
-        set { updatePreferences { $0.updating(autoInsert: newValue) } }
-    }
-
-    var hudVisualStyle: HUDVisualStyle {
-        get { configStore.config.preferences.hudVisualStyle }
-        set { updatePreferences { $0.updating(hudVisualStyle: newValue) } }
-    }
-
-    var hudMessageDuration: HUDMessageDuration {
-        get { configStore.config.preferences.hudMessageDuration }
-        set { updatePreferences { $0.updating(hudMessageDuration: newValue) } }
-    }
-
-    var hudRevealDelay: HUDRevealDelay {
-        get { configStore.config.preferences.hudRevealDelay }
-        set { updatePreferences { $0.updating(hudRevealDelay: newValue) } }
-    }
-
-    var liveASRPreviewEnabled: Bool {
-        get { configStore.config.preferences.liveASRPreviewEnabled }
-        set { updatePreferences { $0.updating(liveASRPreviewEnabled: newValue) } }
-    }
-
-    var listeningEnabled: Bool {
-        get { runtime.listeningEnabled }
-        set { runtime.listeningEnabled = newValue }
-    }
-
-    var didRunStartupPermissionGuide: Bool {
-        get { runtime.didRunStartupPermissionGuide }
-        set { runtime.didRunStartupPermissionGuide = newValue }
-    }
-
-    var startupPermissionGuideIdentity: String? {
-        get { runtime.startupPermissionGuideIdentity }
-        set { runtime.startupPermissionGuideIdentity = newValue }
-    }
-
-    var runtimeActive: Bool {
-        get { runtime.runtimeActive }
-        set { runtime.runtimeActive = newValue }
-    }
-
-    var stopReason: StopReason? {
-        get { runtime.stopReason }
-        set { runtime.stopReason = newValue }
-    }
-
-    func applyConfigPreferences(_ preferences: ConfigPreferences) {
-        configStore.updatePreferencesInMemory { _ in preferences }
-    }
-
-    func configPreferences(launchAtLogin: Bool) -> ConfigPreferences {
-        configStore.config.preferences.updating(
-            selectedModel: selectedModel,
-            launchAtLogin: launchAtLogin
-        )
-    }
-
-    func updatePreferences(_ transform: (ConfigPreferences) -> ConfigPreferences) {
-        configStore.updatePreferencesInMemory(transform)
-    }
-}
-
-enum TranscriptionFlowControl: Error {
-    case asrDraftShown
-}
-
 @MainActor
 final class AppCoordinator: NSObject, NSMenuDelegate {
     enum AppState {
@@ -189,19 +21,21 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     let systemSpeechRecognizer = SystemSpeechRecognizer()
     let liveASRCoordinator = LiveASRCoordinator()
     let recordingPipeline = RecordingPipelineCoordinator()
+    lazy var menuActionRouter = MenuActionRouter(coordinator: self)
+    lazy var permissionCoordinator = PermissionCoordinator(coordinator: self)
+    lazy var listeningLifecycleCoordinator = ListeningLifecycleCoordinator(coordinator: self)
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let configWatcher: ConfigFileWatcher
 
     var state: AppState = .idle
-    var maxRecordingTimer: Timer?
-    var listeningHUDRevealTimer: Timer?
-    var listeningHUDShownForCurrentRecording = false
     var transcriptionTask: Task<Void, Never>?
-    var recordingFocus: FocusSnapshot?
-    var recordingStartDate: Date?
-    var continuousRecordingStateMachine = ContinuousRecordingStateMachine()
-    var continuousRecordingTapTimeout: DispatchWorkItem?
-    var continuousRecordingStopFallback: DispatchWorkItem?
+    let recordingSession = RecordingSessionRuntimeState()
+    let recordingTimingRuntime = RecordingTimingRuntimeState()
+    let sourceLatencyRuntime = SourceLatencyRuntimeState()
+    let automationRuntime = RecordingReplayAutomationRuntimeState()
+    let continuousRecordingRuntime = ContinuousRecordingRuntimeState()
+    let permissionPollingRuntime = PermissionPollingRuntimeState()
+    let triggerCaptureRuntime = TriggerCaptureRuntimeState()
     var tapStatus: String?
     var isTestingConnection = false
     var lastTestConnectionResult: TestConnectionResult?
@@ -209,28 +43,64 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     var globalStopActive = false
     var stopReason: StopReason?
     var lastPermissionSnapshot: PermissionSnapshot?
-    var permissionReadinessTimer: Timer?
-    var permissionDriftTimer: Timer?
     var eventTapFailureHUDEnabled = false
-    var pendingTranscription: PendingTranscription?
     var lastLaunchAtLoginError: String?
     let triggerCapture = TriggerCaptureController()
-    var triggerCaptureTimeout: Timer?
-    weak var triggerCaptureView: TriggerCaptureMenuView?
-    var triggerCapturePausedListening = false
     var systemASRRuntimeRecoveryObservers: [NSObjectProtocol] = []
     var speechAnalyzerRecoveryCooldownUntil: Date?
     var speechAnalyzerRecoveryProbeTask: Task<Void, Never>?
     var speechAnalyzerRecoveryGeneration = 0
-    var sourceLatencyResults: [String: SourceLatencyMeasurement] = [:]
-    var latencyTimer: Timer?
-    var automationOptions: RecordingReplayAutomationOptions?
-    var automationContinuation: CheckedContinuation<RecordingReplayAutomationResult, Never>?
-    var automationRecordingResult: AudioRecordingResult?
-    var automationGUIFrameTimer: Timer?
-    var automationGUIFrameIndex = 0
-    var automationPreviousUILanguage: UILanguage?
     var configHotReload = ConfigHotReloadController()
+
+    var recordingFocus: FocusSnapshot? {
+        get { recordingSession.focus }
+        set { recordingSession.focus = newValue }
+    }
+
+    var recordingStartDate: Date? {
+        get { recordingSession.startDate }
+        set { recordingSession.startDate = newValue }
+    }
+
+    var pendingTranscription: PendingTranscription? {
+        get { recordingSession.pendingTranscription }
+        set { recordingSession.pendingTranscription = newValue }
+    }
+
+    var automationOptions: RecordingReplayAutomationOptions? {
+        get { automationRuntime.options }
+        set { automationRuntime.options = newValue }
+    }
+
+    var automationContinuation: CheckedContinuation<RecordingReplayAutomationResult, Never>? {
+        get { automationRuntime.continuation }
+        set { automationRuntime.continuation = newValue }
+    }
+
+    var automationRecordingResult: AudioRecordingResult? {
+        get { automationRuntime.recordingResult }
+        set { automationRuntime.recordingResult = newValue }
+    }
+
+    var automationPreviousUILanguage: UILanguage? {
+        get { automationRuntime.previousUILanguage }
+        set { automationRuntime.previousUILanguage = newValue }
+    }
+
+    var listeningHUDShownForCurrentRecording: Bool {
+        get { recordingTimingRuntime.listeningHUDShownForCurrentRecording }
+        set { recordingTimingRuntime.listeningHUDShownForCurrentRecording = newValue }
+    }
+
+    var continuousRecordingTapTimeout: DispatchWorkItem? {
+        get { continuousRecordingRuntime.tapTimeout.workItem }
+        set { continuousRecordingRuntime.tapTimeout.replace(newValue) }
+    }
+
+    var continuousRecordingStopFallback: DispatchWorkItem? {
+        get { continuousRecordingRuntime.stopFallback.workItem }
+        set { continuousRecordingRuntime.stopFallback.replace(newValue) }
+    }
 
     var strings: UIStrings {
         UIStrings(language: settings.uiLanguage)
@@ -263,7 +133,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
 
     var modelAvailabilityIndex: ModelAvailabilityIndex {
         let configuredSourceIDs = Set(config.sources.map(\.id))
-        let measurements = sourceLatencyResults.filter { configuredSourceIDs.contains($0.key) }
+        let measurements = sourceLatencyRuntime.results.filter { configuredSourceIDs.contains($0.key) }
         return ModelAvailabilityIndex(measurements: measurements, catalogs: config.modelCatalogs)
     }
 
@@ -286,10 +156,6 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
 
     var continuousRecordingDoubleTapInterval: TimeInterval {
         ContinuousRecordingTapPlanner.doubleTapInterval(systemInterval: NSEvent.doubleClickInterval)
-    }
-
-    var shouldRunLiveASRForCurrentRecording: Bool {
-        true
     }
 
     var speechAnalyzerAvailable: Bool {
@@ -342,14 +208,13 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         let loaded = resolvedConfigStore.ensureValidConfig(uiLanguage: resolvedConfigStore.config.preferences.uiLanguage)
         self.configStore = resolvedConfigStore
         self.settings = AppCoordinatorSettings(configStore: resolvedConfigStore)
-        client = MimoAPIClient(config: loaded.resolvingSource(using: [:]))
+        self.client = MimoAPIClient(config: loaded.resolvingSource(using: [:]))
         self.recordingSource = recordingSource
         self.configWatcher = ConfigFileWatcher(fileURL: resolvedConfigStore.configFileURL)
         self.automationEventSink = automationEventSink
         super.init()
         settings.applyConfigPreferences(loaded.preferences)
         applyConfigModelSettings(loaded)
-        client = makeClient(config: loaded)
         self.recordingSource.onRMSLevel = { [weak self] level in
             DispatchQueue.main.async {
                 self?.hud.updateRMSLevel(level)
@@ -389,7 +254,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     }
 
     func makeClient(config: MimoConfig) -> any TranscriptionClient {
-        MimoAPIClient(config: config.resolvingSource(using: sourceLatencyResults)) { [weak self] diagnostic in
+        MimoAPIClient(config: config.resolvingSource(using: sourceLatencyRuntime.results)) { [weak self] diagnostic in
             DispatchQueue.main.async {
                 self?.recordDiagnostic(diagnostic)
             }
@@ -614,10 +479,9 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     }
 
     func stop() {
-        maxRecordingTimer?.invalidate()
+        recordingTimingRuntime.maxRecordingTimer.cancel()
         resetListeningHUDRevealState()
-        latencyTimer?.invalidate()
-        latencyTimer = nil
+        sourceLatencyRuntime.invalidateTimer()
         configWatcher.stop()
         stopSystemASRRuntimeRecoveryMonitoring()
         stopPermissionReadinessPolling()

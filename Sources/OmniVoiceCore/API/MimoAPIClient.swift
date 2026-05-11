@@ -167,20 +167,13 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
         }
 
         onPhase(.preparingRequest)
-        var request = URLRequest(url: endpoint("/v1/chat/completions"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 180
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        applyAuthorization(to: &request)
-
         let payload = ChatCompletionRequest(
             model: model.rawValue,
             instruction: instruction,
             base64WAV: wavData.base64EncodedString(),
             profile: .inputAudioProfile(for: model)
         )
-        request.httpBody = try JSONEncoder().encode(payload)
+        let request = try makeChatCompletionRequest(payload: payload)
 
         return try await ChatCompletionStreamRunner(
             session: session,
@@ -190,20 +183,20 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
             classifyHTTPError: httpError(status:preview:),
             classifyServerError: { MimoAPIError.serverError($0) },
             mapNetworkError: mapNetworkError,
-            makeDiagnostic: { [self] stage, httpStatus, contentType, sseChunkCount, deltaCharacterCount, finishReason, cancellationState, error in
+            makeDiagnostic: { [self] context in
                 self.diagnostic(
-                    stage: stage,
+                    stage: context.stage,
                     model: model,
                     recordingSeconds: recordingSeconds,
                     wavData: wavData,
                     rms: overallRMS,
-                    httpStatus: httpStatus,
-                    contentType: contentType,
-                    sseChunkCount: sseChunkCount,
-                    deltaCharacterCount: deltaCharacterCount,
-                    finishReason: finishReason,
-                    cancellationState: cancellationState,
-                    error: error
+                    httpStatus: context.httpStatus,
+                    contentType: context.contentType,
+                    sseChunkCount: context.sseChunkCount,
+                    deltaCharacterCount: context.deltaCharacterCount,
+                    finishReason: context.finishReason,
+                    cancellationState: context.cancellationState,
+                    error: context.error
                 )
             },
             validateFinalText: { finalText in
@@ -231,19 +224,12 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
         }
 
         onPhase(.preparingRequest)
-        var request = URLRequest(url: endpoint("/v1/chat/completions"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 180
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        applyAuthorization(to: &request)
-
         let payload = TextChatCompletionRequest(
             model: model.rawValue,
             instruction: instruction,
             profile: .textProfile(for: model)
         )
-        request.httpBody = try JSONEncoder().encode(payload)
+        let request = try makeChatCompletionRequest(payload: payload)
 
         return try await ChatCompletionStreamRunner(
             session: session,
@@ -253,17 +239,17 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
             classifyHTTPError: MimoAPIError.classifiedTextCompletionHTTP(status:preview:),
             classifyServerError: TextLLMFailureClassifier.classifiedServerError,
             mapNetworkError: mapNetworkError,
-            makeDiagnostic: { [self] stage, httpStatus, contentType, sseChunkCount, deltaCharacterCount, finishReason, cancellationState, error in
+            makeDiagnostic: { [self] context in
                 self.diagnostic(
-                    stage: stage,
+                    stage: context.stage,
                     model: model,
-                    httpStatus: httpStatus,
-                    contentType: contentType,
-                    sseChunkCount: sseChunkCount,
-                    deltaCharacterCount: deltaCharacterCount,
-                    finishReason: finishReason,
-                    cancellationState: cancellationState,
-                    error: error
+                    httpStatus: context.httpStatus,
+                    contentType: context.contentType,
+                    sseChunkCount: context.sseChunkCount,
+                    deltaCharacterCount: context.deltaCharacterCount,
+                    finishReason: context.finishReason,
+                    cancellationState: context.cancellationState,
+                    error: context.error
                 )
             },
             validateFinalText: { _ in nil },
@@ -273,12 +259,25 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
         ).run()
     }
 
+    private func makeChatCompletionRequest<Payload: Encodable>(payload: Payload) throws -> URLRequest {
+        var request = URLRequest(url: endpoint("/v1/chat/completions"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        applyAuthorization(to: &request)
+        request.httpBody = try JSONEncoder().encode(payload)
+        return request
+    }
+
     private func endpoint(_ path: String) -> URL {
-        var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false)!
-        let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let suffix = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false) else {
+            return config.baseURL.appendingPathComponent(suffix)
+        }
+        let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         components.path = "/" + [basePath, suffix].filter { !$0.isEmpty }.joined(separator: "/")
-        return components.url!
+        return components.url ?? config.baseURL.appendingPathComponent(suffix)
     }
 
     private func latencyMeasurement(start: Date, statusCode: Int, allowedModelIDs: [String]) -> SourceLatencyMeasurement {

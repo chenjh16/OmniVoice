@@ -121,8 +121,7 @@ public enum PermissionGuidePlanner {
     public static func actions(
         for snapshot: PermissionSnapshot,
         hasRunStartupGuide: Bool,
-        isManualRequest: Bool,
-        requiresSpeechRecognition: Bool = false
+        isManualRequest: Bool
     ) -> [PermissionGuideAction] {
         guard isManualRequest || !hasRunStartupGuide else {
             return []

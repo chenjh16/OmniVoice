@@ -6,11 +6,8 @@ extension ConfigurationTests {
 
     @Test
     func ensureValidConfigMigratesDeprecatedInputAudioModelSection() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-config-legacy-input-audio-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-config-legacy-input-audio")
+        try fixture.write("""
         {
           "active_source": "cn",
           "transcription_pipeline": { "mode": "input_audio" },
@@ -31,10 +28,9 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        """)
 
-        let loader = ConfigLoader(configFileURL: configURL)
+        let loader = fixture.loader
         #expect(loader.loadValidConfigWithoutRepair() == .invalid([
             "models_input_audio_deprecated",
             "models_text_llm_extra_models_deprecated"
@@ -43,10 +39,8 @@ extension ConfigurationTests {
 
         #expect(migrated.modelCatalogs.inputAudioDefaultModel == .mimoV2Omni)
         #expect(migrated.modelCatalogs.textLLMDefaultModel == .mimoV2Pro)
-        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasPrefix("config.jsonc.bak-") }
-        #expect(backups.count == 1)
-        let object = try jsoncObject(from: configURL)
+        #expect(try fixture.backupNames().count == 1)
+        let object = try fixture.object()
         let models = try #require(object["models"] as? [String: Any])
         #expect(models["input_audio"] == nil)
         let audioLLM = try #require(models["audio_llm"] as? [String: Any])
@@ -57,11 +51,8 @@ extension ConfigurationTests {
 
     @Test
     func ensureValidConfigRemovesDeprecatedTextLLMExtraModels() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-config-legacy-text-extra-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let configURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-config-legacy-text-extra")
+        try fixture.write("""
         {
           "active_source": "cn",
           "transcription_pipeline": { "mode": "system_asr_text_llm" },
@@ -101,18 +92,15 @@ extension ConfigurationTests {
             }
           }
         }
-        """.utf8).write(to: configURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+        """)
 
-        let loader = ConfigLoader(configFileURL: configURL)
+        let loader = fixture.loader
         #expect(loader.loadValidConfigWithoutRepair() == .invalid(["models_text_llm_extra_models_deprecated"]))
         let repaired = loader.ensureValidConfig(uiLanguage: .english)
 
         #expect(repaired.modelCatalogs.textLLMDefaultModel == .mimoV2Pro)
-        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasPrefix("config.jsonc.bak-") }
-        #expect(backups.count == 1)
-        let object = try jsoncObject(from: configURL)
+        #expect(try fixture.backupNames().count == 1)
+        let object = try fixture.object()
         let models = try #require(object["models"] as? [String: Any])
         let textLLM = try #require(models["text_llm"] as? [String: Any])
         #expect(textLLM["default_model"] as? String == "mimo-v2-pro")
@@ -121,20 +109,16 @@ extension ConfigurationTests {
 
     @Test
     func configLoaderBacksUpAndRebuildsIncompleteConfig() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omnivoice-config-canonical-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let jsoncURL = directory.appendingPathComponent("config.jsonc")
-        try Data("""
+        let fixture = try configFixture(slug: "omnivoice-config-canonical")
+        try fixture.write("""
         {
           "base_url": "https://old.example.test",
           "api_key": "old-secret",
           "default_model": "mimo-v2.5"
         }
-        """.utf8).write(to: jsoncURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: jsoncURL.path)
+        """)
 
-        let loader = ConfigLoader(configFileURL: jsoncURL)
+        let loader = fixture.loader
         let rebuilt = loader.ensureValidConfig(uiLanguage: .chinese)
         #expect(rebuilt.source == .configFile)
         #expect(rebuilt.activeSourceID == "cn")
@@ -143,11 +127,9 @@ extension ConfigurationTests {
         #expect(rebuilt.preferences.uiLanguage == .chinese)
         #expect(rebuilt.preferences.hudRevealDelay == .milliseconds100)
         #expect(rebuilt.customStyles.first?.id == "meeting_notes")
-        let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasPrefix("config.jsonc.bak-") }
-        #expect(backups.count == 1)
+        #expect(try fixture.backupNames().count == 1)
 
-        let fallbackURL = directory.appendingPathComponent("config.json")
+        let fallbackURL = fixture.directory.appendingPathComponent("config.json")
         try Data("""
         {
           "active_source": "fallback",
@@ -159,7 +141,7 @@ extension ConfigurationTests {
           }
         }
         """.utf8).write(to: fallbackURL)
-        let missingFallback = ConfigLoader(configFileURL: directory.appendingPathComponent("missing.jsonc")).load()
+        let missingFallback = ConfigLoader(configFileURL: fixture.directory.appendingPathComponent("missing.jsonc")).load()
         #expect(missingFallback.source == .missing)
         #expect(missingFallback.apiKey == nil)
     }
@@ -230,21 +212,15 @@ extension ConfigurationTests {
         ]
 
         for (name, text) in cases {
-            let directory = FileManager.default.temporaryDirectory
-                .appendingPathComponent("omnivoice-\(name)-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let configURL = directory.appendingPathComponent("config.jsonc")
-            try Data(text.utf8).write(to: configURL)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+            let fixture = try configFixture(slug: "omnivoice-\(name)")
+            try fixture.write(text)
 
-            let rebuilt = ConfigLoader(configFileURL: configURL).ensureValidConfig(uiLanguage: .english)
+            let rebuilt = fixture.loader.ensureValidConfig(uiLanguage: .english)
             #expect(rebuilt.source == .configFile)
             #expect(rebuilt.resolvedSourceID == (name == "bad-preferences" ? "config1" : "cn"))
             #expect(rebuilt.preferences.uiLanguage == .english)
             #expect(rebuilt.preferences.hudRevealDelay == .milliseconds100)
-            let backups = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-                .filter { $0.hasPrefix("config.jsonc.bak-") }
-            #expect(backups.count == 1)
+            #expect(try fixture.backupNames().count == 1)
         }
     }
 }
