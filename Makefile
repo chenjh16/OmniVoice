@@ -91,6 +91,7 @@ check:
 	git diff --check
 	swift test
 	$(MAKE) build
+	$(MAKE) verify APP_BUNDLE="$(APP_BUNDLE)"
 
 clean:
 	rm -rf .build

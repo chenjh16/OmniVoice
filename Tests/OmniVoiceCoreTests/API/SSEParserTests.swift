@@ -53,4 +53,26 @@ struct SSEParserTests {
         events.append(contentsOf: parser.finish())
         #expect(events == [.serverError(SSEErrorInfo(message: "model does not support input_audio", type: "invalid_request_error", code: "unsupported_audio"))])
     }
+
+    @Test
+    func sseParserIgnoresProviderMetadataLinesAndKeepsDataEvents() {
+        var parser = ChatCompletionSSEParser()
+        let stream = """
+        : keep-alive
+        event: message
+        id: provider-event-1
+        retry: 1000
+        data: {"choices":[{"delta":{"content":"Open"},"finish_reason":null}]}
+
+        event: message
+        data: {"choices":[{"delta":{"content":"AI"},"finish_reason":null}]}
+
+        event: done
+        data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+        """
+        var events = parser.feed(Data(stream.utf8))
+        events.append(contentsOf: parser.finish())
+        #expect(events == [.content("Open"), .content("AI"), .finished("stop")])
+    }
 }

@@ -4,6 +4,36 @@ import Testing
 
 extension ConfigurationTests {
 
+    @Test
+    func defaultConfigDocumentIsNewSchemaAndKeepsReadableMultilineLists() throws {
+        let raw = ConfigDocumentWriter.defaultDocument(uiLanguage: .english)
+        #expect(raw.contains(#""audio_llm""#))
+        #expect(raw.contains(#""text_llm""#))
+        #expect(raw.contains(#""system_asr""#))
+        #expect(raw.contains(#""llm_model_terms""#))
+        #expect(raw.contains(#"""
+      "extra_models": [
+"""#))
+        #expect(raw.contains(#"""
+      "keywords": [
+"""#))
+        #expect(!raw.contains(#""input_audio": {"#))
+        #expect(!raw.contains("display_name_zh"))
+        #expect(!raw.contains("description_zh"))
+        #expect(!raw.contains("allow_apple_server_recognition"))
+
+        let normalized = try #require(JSONCNormalizer.normalize(raw).data(using: .utf8))
+        let object = try #require(JSONSerialization.jsonObject(with: normalized) as? [String: Any])
+        let models = try #require(object["models"] as? [String: Any])
+        let audioLLM = try #require(models["audio_llm"] as? [String: Any])
+        let textLLM = try #require(models["text_llm"] as? [String: Any])
+        #expect(object["default_model"] == nil)
+        #expect(audioLLM["default_model"] as? String == "mimo-v2.5")
+        #expect(audioLLM["extra_models"] is [String])
+        #expect(textLLM["default_model"] as? String == "mimo-v2.5")
+        #expect(textLLM["extra_models"] == nil)
+    }
+
     @MainActor
     @Test
     func appConfigStoreOwnsEffectiveConfigAndSerializesJSONC() throws {

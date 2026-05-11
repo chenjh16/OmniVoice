@@ -11,6 +11,10 @@ final class MenuBuilder {
 
     func build() -> NSMenu {
         let snapshot = MenuStateSnapshot(coordinator: coordinator)
+        let permissionPresenter = PermissionMenuPresenter(
+            strings: coordinator.strings,
+            uiLanguage: snapshot.uiLanguage
+        )
         let menu = NSMenu(title: AppConstants.productName)
         menu.delegate = coordinator
 
@@ -20,7 +24,7 @@ final class MenuBuilder {
             tooltip: coordinator.strings.tooltip(.globalStop)
         ))
         menu.addItem(coordinator.disabledItem("\(coordinator.strings.statusPrefix): \(snapshot.statusTitle)"))
-        menu.addItem(coordinator.permissionSummaryItem(snapshot.permissionSnapshot))
+        menu.addItem(permissionPresenter.summaryItem(snapshot.permissionSnapshot))
         menu.addItem(coordinator.item(
             title: coordinator.strings.requestAllPermissions,
             action: #selector(AppCoordinator.requestAllPermissions),
@@ -110,53 +114,5 @@ final class MenuBuilder {
         menu.addItem(coordinator.item(title: coordinator.strings.quit, action: #selector(AppCoordinator.quit)))
 
         return menu
-    }
-}
-
-@MainActor
-struct MenuStateSnapshot {
-    let permissionSnapshot: PermissionSnapshot
-    let displayConfig: MimoConfig
-    let globalStopActive: Bool
-    let listeningEnabled: Bool
-    let statusTitle: String
-    let pipelineMode: TranscriptionPipelineMode
-    let currentPipelineModel: AllowedSpeechModel
-    let systemASREngine: SystemASREngine
-    let configWarnings: [String]
-    let lastConfigHotReloadMessage: String?
-    let uiLanguage: UILanguage
-    let styleDescriptor: TranscriptionStyleDescriptor
-    let keywordHintsEnabled: Bool
-    let selectedKeywordGroupCount: Int
-    let triggerKey: TriggerKey
-    let minRecordingDuration: MinRecordingDuration
-    let maxRecordingDuration: MaxRecordingDuration
-    let launchAtLoginEnabled: Bool
-    let autoInsert: Bool
-    let lastLaunchAtLoginError: String?
-
-    init(coordinator: AppCoordinator) {
-        let settings = coordinator.settings
-        permissionSnapshot = PermissionChecker.snapshot()
-        displayConfig = coordinator.config.resolvingSource(using: coordinator.sourceLatencyResults)
-        globalStopActive = coordinator.globalStopActive
-        listeningEnabled = settings.listeningEnabled
-        statusTitle = coordinator.statusTitle
-        pipelineMode = settings.pipelineMode
-        currentPipelineModel = coordinator.currentPipelineModel
-        systemASREngine = coordinator.effectiveSystemASREngine
-        configWarnings = coordinator.config.warnings
-        lastConfigHotReloadMessage = coordinator.configHotReload.lastMessage
-        uiLanguage = settings.uiLanguage
-        styleDescriptor = coordinator.currentStyleDescriptor
-        keywordHintsEnabled = settings.keywordHintsEnabled
-        selectedKeywordGroupCount = coordinator.selectedKeywordGroupCount
-        triggerKey = settings.triggerKey
-        minRecordingDuration = settings.minRecordingDuration
-        maxRecordingDuration = settings.maxRecordingDuration
-        launchAtLoginEnabled = LaunchAtLoginController.status() == .enabled
-        autoInsert = settings.autoInsert
-        lastLaunchAtLoginError = coordinator.lastLaunchAtLoginError
     }
 }
