@@ -12,8 +12,13 @@ INSTALLED_APP := $(INSTALL_DIR)/$(APP_NAME).app
 EXECUTABLE_PATH := $(BUILD_ROOT)/$(CONFIGURATION)/$(EXECUTABLE_PRODUCT)
 CONFIG_TEMPLATE := config/omnivoice.config.example.jsonc
 USER_CONFIG ?= $(HOME)/.config/omnivoice/config.jsonc
+APP_VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist 2>/dev/null)
+VERSION ?= $(APP_VERSION)
+RELEASE_DIR := $(BUILD_ROOT)/releases
+RELEASE_ZIP := $(RELEASE_DIR)/$(APP_NAME)-$(VERSION)-macos.zip
+RELEASE_SHA := $(RELEASE_ZIP).sha256
 
-.PHONY: build run dev-run install stop-installed verify cleanup-legacy config-template clean test check
+.PHONY: build run dev-run install stop-installed verify release-package verify-release-package cleanup-legacy config-template clean test check
 
 build:
 	swift build -c $(CONFIGURATION) --product $(EXECUTABLE_PRODUCT)
@@ -83,6 +88,31 @@ verify:
 	/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$(APP_BUNDLE)/Contents/Info.plist" >/dev/null
 	/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$(APP_BUNDLE)/Contents/Info.plist" >/dev/null
 	codesign --verify --deep --strict --verbose=2 "$(APP_BUNDLE)"
+
+release-package: build verify
+	rm -rf "$(RELEASE_DIR)"
+	mkdir -p "$(RELEASE_DIR)"
+	ditto -c -k --sequesterRsrc --keepParent "$(APP_BUNDLE)" "$(RELEASE_ZIP)"
+	(cd "$(RELEASE_DIR)" && shasum -a 256 "$(notdir $(RELEASE_ZIP))" > "$(notdir $(RELEASE_SHA))")
+	$(MAKE) verify-release-package RELEASE_ZIP="$(RELEASE_ZIP)" RELEASE_SHA="$(RELEASE_SHA)" VERSION="$(VERSION)"
+
+verify-release-package:
+	test -f "$(RELEASE_ZIP)"
+	test -f "$(RELEASE_SHA)"
+	source_version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)"; \
+	built_version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$(APP_BUNDLE)/Contents/Info.plist")"; \
+	test "$$source_version" = "$(VERSION)"; \
+	test "$$built_version" = "$(VERSION)"
+	tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	unzip -q "$(RELEASE_ZIP)" -d "$$tmpdir"; \
+	test -d "$$tmpdir/$(APP_NAME).app"; \
+	zip_version="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$$tmpdir/$(APP_NAME).app/Contents/Info.plist")"; \
+	zip_bundle_id="$$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$$tmpdir/$(APP_NAME).app/Contents/Info.plist")"; \
+	test "$$zip_version" = "$(VERSION)"; \
+	test "$$zip_bundle_id" = "$(BUNDLE_ID)"; \
+	codesign --verify --deep --strict --verbose=2 "$$tmpdir/$(APP_NAME).app"
+	(cd "$(RELEASE_DIR)" && shasum -a 256 -c "$(notdir $(RELEASE_SHA))")
 
 test:
 	swift test

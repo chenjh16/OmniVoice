@@ -226,155 +226,34 @@ public final class ActionPanelController {
     private func ensurePanel() -> KeyableActionPanel {
         if let panel { return panel }
 
-        let panel = KeyableActionPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 252),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
+        let bundle = ActionPanelWindowFactory.make(
+            owner: self,
+            primarySelector: #selector(primaryButtonPressed),
+            secondarySelector: #selector(secondaryButtonPressed),
+            tertiarySelector: #selector(tertiaryButtonPressed),
+            onRootPrimary: { [weak self] in self?.primaryAction?() },
+            onRootCancel: { [weak self] in self?.cancelAction?() },
+            onTextPrimary: { [weak self] in self?.primaryAction?() },
+            onTextCancel: { [weak self] in self?.cancelAction?() },
+            onAppearanceChanged: { [weak self] in
+                guard let self else { return }
+                self.applyPalette(status: self.currentScenario == .retry ? .warning : .normal)
+            }
         )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = ActionPanelSurfaceMetrics.usesSystemShadow
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.ignoresMouseEvents = false
 
-        let root = ActionPanelKeyView()
-        root.onPrimary = { [weak self] in self?.primaryAction?() }
-        root.onCancel = { [weak self] in self?.cancelAction?() }
-        root.wantsLayer = true
-
-        let surfaceShadowView = SurfaceShadowView(role: .actionPanel)
-        surfaceShadowView.translatesAutoresizingMaskIntoConstraints = false
-
-        let backgroundView = ActionPanelBackgroundView()
-        backgroundView.translatesAutoresizingMaskIntoConstraints = false
-        backgroundView.onEffectiveAppearanceChanged = { [weak self] in
-            guard let self else { return }
-            self.applyPalette(status: self.currentScenario == .retry ? .warning : .normal)
-        }
-
-        let contentContainer = NSView()
-        contentContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        let titleLabel = HaloTextField(labelWithString: "")
-        titleLabel.font = .systemFont(ofSize: 14.5, weight: .semibold)
-        titleLabel.alignment = ActionPanelTextAlignmentPolicy.title
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let textView = ActionPanelTextView()
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = false
-        textView.alignment = ActionPanelTextAlignmentPolicy.body
-        textView.font = .systemFont(ofSize: 14, weight: .semibold)
-        textView.textContainerInset = NSSize(width: 10, height: 12)
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.onPrimary = { [weak self] in self?.primaryAction?() }
-        textView.onCancel = { [weak self] in self?.cancelAction?() }
-
-        let scrollView = NSScrollView()
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = ActionPanelContentTransparencyPolicy.scrollViewDrawsBackground
-        scrollView.contentView.drawsBackground = ActionPanelContentTransparencyPolicy.clipViewDrawsBackground
-        scrollView.contentView.backgroundColor = .clear
-        scrollView.borderType = .noBorder
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        textView.drawsBackground = ActionPanelContentTransparencyPolicy.textViewDrawsBackground
-        textView.backgroundColor = .clear
-
-        let buttonStack = NSStackView()
-        buttonStack.orientation = .horizontal
-        buttonStack.alignment = .centerY
-        buttonStack.distribution = .fill
-        buttonStack.spacing = 10
-        buttonStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let primaryButton = ThemedPanelButton(role: .primary)
-        primaryButton.target = self
-        primaryButton.action = #selector(primaryButtonPressed)
-        let secondaryButton = ThemedPanelButton(role: .secondary)
-        secondaryButton.target = self
-        secondaryButton.action = #selector(secondaryButtonPressed)
-        let tertiaryButton = ThemedPanelButton(role: .secondary)
-        tertiaryButton.target = self
-        tertiaryButton.action = #selector(tertiaryButtonPressed)
-        for button in [primaryButton, secondaryButton, tertiaryButton] {
-            button.translatesAutoresizingMaskIntoConstraints = false
-            button.heightAnchor.constraint(equalToConstant: 31).isActive = true
-        }
-        primaryButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 104).isActive = true
-        secondaryButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
-        secondaryButton.widthAnchor.constraint(lessThanOrEqualToConstant: 230).isActive = true
-        tertiaryButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 112).isActive = true
-
-        root.addSubview(surfaceShadowView)
-        root.addSubview(backgroundView)
-        backgroundView.addSubview(contentContainer)
-        contentContainer.addSubview(titleLabel)
-        contentContainer.addSubview(scrollView)
-        contentContainer.addSubview(buttonStack)
-        panel.contentView = root
-
-        NSLayoutConstraint.activate([
-            surfaceShadowView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            surfaceShadowView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            surfaceShadowView.topAnchor.constraint(equalTo: root.topAnchor),
-            surfaceShadowView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-
-            backgroundView.leadingAnchor.constraint(
-                equalTo: root.leadingAnchor,
-                constant: SurfaceDepthMetrics.actionPanelInsets.left
-            ),
-            backgroundView.trailingAnchor.constraint(
-                equalTo: root.trailingAnchor,
-                constant: -SurfaceDepthMetrics.actionPanelInsets.right
-            ),
-            backgroundView.topAnchor.constraint(
-                equalTo: root.topAnchor,
-                constant: SurfaceDepthMetrics.actionPanelInsets.top
-            ),
-            backgroundView.bottomAnchor.constraint(
-                equalTo: root.bottomAnchor,
-                constant: -SurfaceDepthMetrics.actionPanelInsets.bottom
-            ),
-
-            contentContainer.leadingAnchor.constraint(equalTo: backgroundView.leadingAnchor),
-            contentContainer.trailingAnchor.constraint(equalTo: backgroundView.trailingAnchor),
-            contentContainer.topAnchor.constraint(equalTo: backgroundView.topAnchor),
-            contentContainer.bottomAnchor.constraint(equalTo: backgroundView.bottomAnchor),
-
-            titleLabel.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor, constant: 26),
-            titleLabel.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor, constant: -26),
-            titleLabel.topAnchor.constraint(equalTo: contentContainer.topAnchor, constant: 18),
-
-            scrollView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor, constant: 28),
-            scrollView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor, constant: -28),
-            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10),
-            scrollView.bottomAnchor.constraint(equalTo: buttonStack.topAnchor, constant: -16),
-
-            buttonStack.centerXAnchor.constraint(equalTo: contentContainer.centerXAnchor),
-            buttonStack.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor, constant: -18),
-            buttonStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 31)
-        ])
-
-        self.panel = panel
-        self.rootView = root
-        self.surfaceShadowView = surfaceShadowView
-        self.backgroundView = backgroundView
-        self.contentContainer = contentContainer
-        self.titleLabel = titleLabel
-        self.textView = textView
-        self.scrollView = scrollView
-        self.buttonStack = buttonStack
-        self.primaryButton = primaryButton
-        self.secondaryButton = secondaryButton
-        self.tertiaryButton = tertiaryButton
-        return panel
+        panel = bundle.panel
+        rootView = bundle.rootView
+        surfaceShadowView = bundle.surfaceShadowView
+        backgroundView = bundle.backgroundView
+        contentContainer = bundle.contentContainer
+        titleLabel = bundle.titleLabel
+        textView = bundle.textView
+        scrollView = bundle.scrollView
+        buttonStack = bundle.buttonStack
+        primaryButton = bundle.primaryButton
+        secondaryButton = bundle.secondaryButton
+        tertiaryButton = bundle.tertiaryButton
+        return bundle.panel
     }
 
     private func configureButtons(
