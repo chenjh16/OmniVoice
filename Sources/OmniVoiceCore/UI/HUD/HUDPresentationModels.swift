@@ -209,10 +209,16 @@ public struct HUDLivePreviewSessionLayoutState: Equatable, Sendable {
 
     public let maxHUDWidth: CGFloat
     public let maxTextViewportWidth: CGFloat
+    public let hasOverflowed: Bool
 
-    public init(maxHUDWidth: CGFloat = 0, maxTextViewportWidth: CGFloat = 0) {
+    public init(
+        maxHUDWidth: CGFloat = 0,
+        maxTextViewportWidth: CGFloat = 0,
+        hasOverflowed: Bool = false
+    ) {
         self.maxHUDWidth = maxHUDWidth
         self.maxTextViewportWidth = maxTextViewportWidth
+        self.hasOverflowed = hasOverflowed
     }
 }
 
@@ -228,13 +234,14 @@ public enum HUDLivePreviewSessionLayoutPlanner {
     ) -> HUDLivePreviewSessionLayout {
         let nextState = HUDLivePreviewSessionLayoutState(
             maxHUDWidth: max(state.maxHUDWidth, rawLayout.hudWidth),
-            maxTextViewportWidth: max(state.maxTextViewportWidth, rawLayout.textViewportWidth)
+            maxTextViewportWidth: max(state.maxTextViewportWidth, rawLayout.textViewportWidth),
+            hasOverflowed: state.hasOverflowed || rawLayout.fadeTailEnabled
         )
         let stableLayout = HUDLivePreviewLayout(
             hudWidth: nextState.maxHUDWidth,
             textViewportWidth: nextState.maxTextViewportWidth,
             fixedAccessoryWidth: rawLayout.fixedAccessoryWidth,
-            fadeTailEnabled: rawLayout.fadeTailEnabled
+            fadeTailEnabled: nextState.hasOverflowed
         )
         return HUDLivePreviewSessionLayout(layout: stableLayout, state: nextState)
     }

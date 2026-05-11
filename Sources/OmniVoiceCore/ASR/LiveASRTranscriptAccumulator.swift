@@ -11,11 +11,20 @@ struct LiveASRTranscriptSnapshot: Equatable, Sendable {
     }
 }
 
+enum LiveASRSegmentRelation: Equatable, Sendable {
+    case duplicate
+    case sameSegment
+    case overlappingContinuation(overlap: Int)
+    case unrelatedReset
+}
+
 struct LiveASRTranscriptAccumulator: Equatable, Sendable {
     static let defaultSegmentPauseThreshold: TimeInterval = 1.2
 
-    private var committedSegments: [String] = []
-    private var workingSegment = ""
+    private var committedDisplaySegments: [String] = []
+    private var displayWorkingSegment = ""
+    private var committedResolvedSegments: [String] = []
+    private var resolvedWorkingSegment = ""
     private var lastUpdateDate: Date?
     private let segmentPauseThreshold: TimeInterval
 
@@ -24,8 +33,10 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
     }
 
     mutating func reset() {
-        committedSegments.removeAll(keepingCapacity: true)
-        workingSegment = ""
+        committedDisplaySegments.removeAll(keepingCapacity: true)
+        displayWorkingSegment = ""
+        committedResolvedSegments.removeAll(keepingCapacity: true)
+        resolvedWorkingSegment = ""
         lastUpdateDate = nil
     }
 
@@ -33,45 +44,83 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
         let text = Self.displayText(update.text)
         guard !text.isEmpty else { return nil }
 
-        var candidate = candidateWithoutCommittedPrefix(text)
-        if candidate.isEmpty {
-            workingSegment = ""
-            lastUpdateDate = now
-            return snapshot()
-        }
-
-        if shouldCommitWorking(before: candidate, now: now) {
-            commitWorkingSegment()
-            candidate = candidateWithoutCommittedPrefix(text)
-            if candidate.isEmpty {
-                lastUpdateDate = now
-                return snapshot()
-            }
-        }
-
-        workingSegment = candidate
+        acceptDisplayText(text)
+        acceptResolvedText(text)
         if update.isFinal {
-            commitWorkingSegment()
+            commitDisplayWorkingSegment()
+            commitResolvedWorkingSegment()
         }
         lastUpdateDate = now
         return snapshot()
     }
 
     mutating func snapshotForFinal() -> LiveASRTranscriptSnapshot {
-        commitWorkingSegment()
+        commitDisplayWorkingSegment()
+        commitResolvedWorkingSegment()
         return snapshot()
     }
 
     func snapshot() -> LiveASRTranscriptSnapshot {
-        let display = Self.combinedText(segments: committedSegments, working: workingSegment)
-        return LiveASRTranscriptSnapshot(displayText: display, resolvedText: display)
+        let display = Self.combinedText(segments: committedDisplaySegments, working: displayWorkingSegment)
+        let resolved = Self.combinedText(segments: committedResolvedSegments, working: resolvedWorkingSegment)
+        return LiveASRTranscriptSnapshot(displayText: display, resolvedText: resolved)
     }
 
     static func displayText(_ text: String) -> String {
         HUDLivePreviewPresentationPlanner.displayText(from: text)
     }
 
-    private func candidateWithoutCommittedPrefix(_ text: String) -> String {
+    private mutating func acceptDisplayText(_ text: String) {
+        let candidate = candidateWithoutCommittedPrefix(text, committedSegments: committedDisplaySegments)
+        guard !candidate.isEmpty else { return }
+
+        switch Self.relation(current: displayWorkingSegment, candidate: candidate) {
+        case .duplicate:
+            return
+        case .sameSegment:
+            if candidate.count >= displayWorkingSegment.count {
+                displayWorkingSegment = candidate
+            }
+        case let .overlappingContinuation(overlap):
+            displayWorkingSegment = Self.mergedContinuation(
+                current: displayWorkingSegment,
+                candidate: candidate,
+                overlap: overlap
+            )
+        case .unrelatedReset:
+            commitDisplayWorkingSegment()
+            let nextCandidate = candidateWithoutCommittedPrefix(text, committedSegments: committedDisplaySegments)
+            if !nextCandidate.isEmpty {
+                displayWorkingSegment = nextCandidate
+            }
+        }
+    }
+
+    private mutating func acceptResolvedText(_ text: String) {
+        let candidate = candidateWithoutCommittedPrefix(text, committedSegments: committedResolvedSegments)
+        guard !candidate.isEmpty else { return }
+
+        switch Self.relation(current: resolvedWorkingSegment, candidate: candidate) {
+        case .duplicate:
+            return
+        case .sameSegment:
+            resolvedWorkingSegment = candidate
+        case let .overlappingContinuation(overlap):
+            resolvedWorkingSegment = Self.mergedContinuation(
+                current: resolvedWorkingSegment,
+                candidate: candidate,
+                overlap: overlap
+            )
+        case .unrelatedReset:
+            commitResolvedWorkingSegment()
+            let nextCandidate = candidateWithoutCommittedPrefix(text, committedSegments: committedResolvedSegments)
+            if !nextCandidate.isEmpty {
+                resolvedWorkingSegment = nextCandidate
+            }
+        }
+    }
+
+    private func candidateWithoutCommittedPrefix(_ text: String, committedSegments: [String]) -> String {
         let committed = Self.combinedText(segments: committedSegments, working: "")
         guard !committed.isEmpty else { return text }
         if Self.equivalent(text, committed) {
@@ -82,22 +131,27 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
         return Self.displayText(suffix)
     }
 
-    private func shouldCommitWorking(before candidate: String, now: Date) -> Bool {
-        guard !workingSegment.isEmpty,
-              let lastUpdateDate,
-              now.timeIntervalSince(lastUpdateDate) >= segmentPauseThreshold else {
-            return false
-        }
-        return !Self.looksLikeSameSegment(workingSegment, candidate)
+    private mutating func commitDisplayWorkingSegment() {
+        Self.commitWorkingSegment(
+            committedSegments: &committedDisplaySegments,
+            workingSegment: &displayWorkingSegment
+        )
     }
 
-    private mutating func commitWorkingSegment() {
-        let segment = Self.displayText(workingSegment)
+    private mutating func commitResolvedWorkingSegment() {
+        Self.commitWorkingSegment(
+            committedSegments: &committedResolvedSegments,
+            workingSegment: &resolvedWorkingSegment
+        )
+    }
+
+    private static func commitWorkingSegment(committedSegments: inout [String], workingSegment: inout String) {
+        let segment = displayText(workingSegment)
         workingSegment = ""
         guard !segment.isEmpty else { return }
-        let committed = Self.combinedText(segments: committedSegments, working: "")
-        if Self.comparableText(committed) == Self.comparableText(segment)
-            || Self.comparableText(committedSegments.last ?? "") == Self.comparableText(segment) {
+        let committed = combinedText(segments: committedSegments, working: "")
+        if comparableText(committed) == comparableText(segment)
+            || comparableText(committedSegments.last ?? "") == comparableText(segment) {
             return
         }
         committedSegments.append(segment)
@@ -111,23 +165,42 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
         return displayText(parts.joined(separator: " "))
     }
 
-    private static func looksLikeSameSegment(_ current: String, _ candidate: String) -> Bool {
+    private static func relation(current: String, candidate: String) -> LiveASRSegmentRelation {
+        guard !candidate.isEmpty else { return .duplicate }
+        guard !current.isEmpty else { return .sameSegment }
         if equivalent(current, candidate) {
-            return true
+            return .duplicate
         }
         if current.hasPrefix(candidate) || candidate.hasPrefix(current) {
-            return true
+            return .sameSegment
         }
+
         let shorterCount = min(current.count, candidate.count)
-        guard shorterCount > 0 else { return false }
+        guard shorterCount > 0 else { return .unrelatedReset }
         let prefixCount = commonPrefixCount(current, candidate)
         if prefixCount >= min(4, shorterCount),
            Double(prefixCount) / Double(shorterCount) >= 0.55 {
-            return true
+            return .sameSegment
         }
+
         let overlap = suffixPrefixOverlap(current, candidate)
-        return overlap >= min(5, shorterCount)
-            && Double(overlap) / Double(shorterCount) >= 0.45
+        if overlap >= 2,
+           Double(overlap) / Double(shorterCount) >= 0.35 {
+            return .overlappingContinuation(overlap: overlap)
+        }
+        if overlap >= min(5, shorterCount),
+           Double(overlap) / Double(shorterCount) >= 0.45 {
+            return .overlappingContinuation(overlap: overlap)
+        }
+        return .unrelatedReset
+    }
+
+    private static func mergedContinuation(current: String, candidate: String, overlap: Int) -> String {
+        guard overlap > 0 else {
+            return displayText([current, candidate].joined(separator: " "))
+        }
+        let suffix = String(candidate.dropFirst(overlap))
+        return displayText(current + suffix)
     }
 
     private static func equivalent(_ lhs: String, _ rhs: String) -> Bool {

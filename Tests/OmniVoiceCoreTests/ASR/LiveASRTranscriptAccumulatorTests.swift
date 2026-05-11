@@ -24,6 +24,24 @@ struct LiveASRTranscriptAccumulatorTests {
     }
 
     @Test
+    func accumulatesUnrelatedResetWithoutWaitingForPauseThreshold() {
+        var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
+        let start = Date(timeIntervalSince1970: 5)
+
+        _ = accumulator.accept(
+            LiveASRUpdate(text: "第一段内容", isFinal: false),
+            now: start
+        )
+        let second = accumulator.accept(
+            LiveASRUpdate(text: "第二段内容", isFinal: false),
+            now: start.addingTimeInterval(0.2)
+        )
+
+        #expect(second?.displayText == "第一段内容第二段内容")
+        #expect(accumulator.snapshotForFinal().resolvedText == "第一段内容第二段内容")
+    }
+
+    @Test
     func correctionUpdatesSameWorkingSegmentWithoutDuplication() {
         var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
         let start = Date(timeIntervalSince1970: 10)
@@ -39,6 +57,45 @@ struct LiveASRTranscriptAccumulatorTests {
 
         #expect(corrected?.displayText == "config jsonc file")
         #expect(accumulator.snapshotForFinal().resolvedText == "config jsonc file")
+    }
+
+    @Test
+    func shorterCorrectionDoesNotShrinkDisplayButUpdatesResolvedText() {
+        var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
+        let start = Date(timeIntervalSince1970: 12)
+
+        _ = accumulator.accept(
+            LiveASRUpdate(text: "重构重写的点", isFinal: false),
+            now: start
+        )
+        let corrected = accumulator.accept(
+            LiveASRUpdate(text: "重构重写", isFinal: false),
+            now: start.addingTimeInterval(0.2)
+        )
+
+        #expect(corrected?.displayText == "重构重写的点")
+        #expect(corrected?.resolvedText == "重构重写")
+        #expect(accumulator.snapshotForFinal().displayText == "重构重写的点")
+        #expect(accumulator.snapshot().resolvedText == "重构重写")
+    }
+
+    @Test
+    func emptyUpdateDoesNotClearExistingDisplayText() {
+        var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
+        let start = Date(timeIntervalSince1970: 14)
+
+        _ = accumulator.accept(
+            LiveASRUpdate(text: "已有预览", isFinal: false),
+            now: start
+        )
+        let empty = accumulator.accept(
+            LiveASRUpdate(text: "   \n\t  ", isFinal: false),
+            now: start.addingTimeInterval(0.2)
+        )
+
+        #expect(empty == nil)
+        #expect(accumulator.snapshot().displayText == "已有预览")
+        #expect(accumulator.snapshot().resolvedText == "已有预览")
     }
 
     @Test

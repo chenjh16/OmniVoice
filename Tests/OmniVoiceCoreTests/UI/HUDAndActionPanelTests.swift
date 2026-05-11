@@ -181,6 +181,7 @@ struct HUDAndActionPanelTests {
         )
         #expect(second.layout.hudWidth == first.layout.hudWidth)
         #expect(second.layout.textViewportWidth == first.layout.textViewportWidth)
+        #expect(second.layout.fadeTailEnabled == first.state.hasOverflowed)
 
         let reset = HUDLivePreviewSessionLayoutPlanner.layout(
             rawLayout: shorter,
@@ -188,6 +189,49 @@ struct HUDAndActionPanelTests {
         )
         #expect(reset.layout.hudWidth < first.layout.hudWidth)
         #expect(reset.layout.textViewportWidth < first.layout.textViewportWidth)
+    }
+
+    @Test
+    func liveASRPreviewSessionLayoutKeepsOverflowFadeStickyUntilReset() {
+        let badgeWidth = HUDDraftBadgeMetrics.width(for: "草稿")
+        let overflowing = HUDLivePreviewLayoutPlanner.layout(
+            measuredTextWidth: 900,
+            measuredBadgeWidth: badgeWidth,
+            includesWaveform: true,
+            screenWidth: 1500
+        )
+        #expect(overflowing.fadeTailEnabled)
+
+        let first = HUDLivePreviewSessionLayoutPlanner.layout(
+            rawLayout: overflowing,
+            previous: .empty
+        )
+        #expect(first.state.hasOverflowed)
+        #expect(first.layout.fadeTailEnabled)
+
+        let short = HUDLivePreviewLayoutPlanner.layout(
+            measuredTextWidth: 80,
+            measuredBadgeWidth: badgeWidth,
+            includesWaveform: true,
+            screenWidth: 1500
+        )
+        #expect(!short.fadeTailEnabled)
+
+        let second = HUDLivePreviewSessionLayoutPlanner.layout(
+            rawLayout: short,
+            previous: first.state
+        )
+        #expect(second.state.hasOverflowed)
+        #expect(second.layout.fadeTailEnabled)
+        #expect(second.layout.hudWidth == first.layout.hudWidth)
+        #expect(second.layout.textViewportWidth == first.layout.textViewportWidth)
+
+        let reset = HUDLivePreviewSessionLayoutPlanner.layout(
+            rawLayout: short,
+            previous: .empty
+        )
+        #expect(!reset.state.hasOverflowed)
+        #expect(!reset.layout.fadeTailEnabled)
     }
 
     @Test

@@ -98,7 +98,7 @@
       "message_duration_seconds": 3,
       // Delay before the listening HUD appears after pressing the trigger, in milliseconds. Recording starts immediately.
       "reveal_delay_ms": 100,
-      // Show accumulated live System ASR text in the HUD while recording. Preview only; final text still uses the selected pipeline.
+      // Show monotonic accumulated live System ASR text in the HUD while recording. Preview only; final text still uses the selected pipeline.
       "live_asr_preview_enabled": false
     }
   },
