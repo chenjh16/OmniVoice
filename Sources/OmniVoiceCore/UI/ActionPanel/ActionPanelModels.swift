@@ -1,4 +1,5 @@
 import CoreGraphics
+import AppKit
 import Foundation
 
 public struct SurfaceDiagnosticSnapshot: Equatable, Sendable {
@@ -25,6 +26,11 @@ public struct SurfaceDiagnosticSnapshot: Equatable, Sendable {
 
 public enum ActionPanelSurfaceMetrics {
     public static let usesSystemShadow = false
+}
+
+public enum ActionPanelTextAlignmentPolicy {
+    public static let title: NSTextAlignment = .center
+    public static let body: NSTextAlignment = .natural
 }
 
 public enum ActionPanelShortcutMetrics {

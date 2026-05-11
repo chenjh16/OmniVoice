@@ -1,6 +1,10 @@
 import Foundation
 import CoreGraphics
 
+public enum HUDSurfaceMetrics {
+    public static let usesSystemShadow = false
+}
+
 public enum HUDVisualStyle: String, CaseIterable, Codable, Sendable {
     case automatic
     case darkCapsule
@@ -173,7 +177,10 @@ public struct GlassReadabilityStyle: Equatable, Sendable {
     public let scrimTone: HUDTextTone
     public let scrimAlpha: CGFloat
     public let tintAlpha: CGFloat
+    public let materialAlpha: CGFloat
     public let shadowAlpha: CGFloat
+    public let haloAlpha: CGFloat
+    public let haloWidth: CGFloat
     public let warning: Bool
 }
 
@@ -187,18 +194,24 @@ public enum GlassReadabilityResolver {
             return GlassReadabilityStyle(
                 textTone: .light,
                 scrimTone: .dark,
-                scrimAlpha: appearance == .light ? 0.18 : 0.24,
-                tintAlpha: 0.16,
-                shadowAlpha: 0.34,
+                scrimAlpha: appearance == .light ? 0.14 : 0.075,
+                tintAlpha: appearance == .light ? 0.34 : 0.20,
+                materialAlpha: 1,
+                shadowAlpha: 0.10,
+                haloAlpha: 0.24,
+                haloWidth: 3.2,
                 warning: false
             )
         case .warning:
             return GlassReadabilityStyle(
                 textTone: .light,
                 scrimTone: .dark,
-                scrimAlpha: appearance == .light ? 0.24 : 0.30,
-                tintAlpha: 0.22,
-                shadowAlpha: 0.36,
+                scrimAlpha: 0.18,
+                tintAlpha: 0.25,
+                materialAlpha: 1,
+                shadowAlpha: 0.12,
+                haloAlpha: 0.26,
+                haloWidth: 3.4,
                 warning: true
             )
         }

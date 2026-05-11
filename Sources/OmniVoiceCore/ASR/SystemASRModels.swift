@@ -47,6 +47,57 @@ public enum LiveASREngineFallbackPlanner {
     }
 }
 
+public enum SystemASRRuntimeRecoveryEvent: String, CaseIterable, Sendable {
+    case willSleep = "will_sleep"
+    case didWake = "did_wake"
+    case screensDidSleep = "screens_did_sleep"
+    case screensDidWake = "screens_did_wake"
+    case screenLocked = "screen_locked"
+    case screenUnlocked = "screen_unlocked"
+    case speechAnalyzerStartFailed = "speech_analyzer_start_failed"
+    case speechAnalyzerProbeFailed = "speech_analyzer_probe_failed"
+}
+
+public enum SystemASRRuntimeRecoveryPlanner {
+    public static let wakeCooldownSeconds: TimeInterval = 45
+    public static let failedStartCooldownSeconds: TimeInterval = 60
+    public static let probeDelaySeconds: TimeInterval = 4
+
+    public static func preferredLiveEngine(
+        configured: SystemASREngine,
+        now: Date,
+        speechAnalyzerCooldownUntil: Date?
+    ) -> SystemASREngine {
+        guard configured == .speechAnalyzer,
+              let cooldownUntil = speechAnalyzerCooldownUntil,
+              now < cooldownUntil else {
+            return configured
+        }
+        return .classicSpeech
+    }
+
+    public static func shouldScheduleSpeechAnalyzerProbe(
+        configured: SystemASREngine,
+        speechAnalyzerAvailable: Bool
+    ) -> Bool {
+        configured == .speechAnalyzer && speechAnalyzerAvailable
+    }
+
+    public static func cooldownUntil(
+        event: SystemASRRuntimeRecoveryEvent,
+        now: Date
+    ) -> Date? {
+        switch event {
+        case .didWake, .screensDidWake, .screenUnlocked:
+            return now.addingTimeInterval(wakeCooldownSeconds)
+        case .speechAnalyzerStartFailed, .speechAnalyzerProbeFailed:
+            return now.addingTimeInterval(failedStartCooldownSeconds)
+        case .willSleep, .screensDidSleep, .screenLocked:
+            return nil
+        }
+    }
+}
+
 public struct SystemASRSettings: Equatable, Sendable {
     public let engine: SystemASREngine
     public let keywordHintsEnabled: Bool

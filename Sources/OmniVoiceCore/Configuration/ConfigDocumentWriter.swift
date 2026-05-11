@@ -187,6 +187,11 @@ public enum ConfigDocumentWriter {
     }
 
     private static func defaultKeywordGroups(uiLanguage: UILanguage) -> [KeywordGroup] {
+        let llmGroup = KeywordGroup(
+            id: "llm_model_terms",
+            displayName: uiLanguage == .chinese ? "大模型与模型公司" : "LLM Models and Companies",
+            keywords: llmModelKeywords
+        )
         switch uiLanguage {
         case .chinese:
             return [
@@ -204,7 +209,8 @@ public enum ConfigDocumentWriter {
                     id: "technical_terms",
                     displayName: "技术术语",
                     keywords: ["Swift", "AppKit", "macOS", "JSONC", "API", "make run", "Cmd+V", "Fn"]
-                )
+                ),
+                llmGroup
             ]
         case .english:
             return [
@@ -222,10 +228,48 @@ public enum ConfigDocumentWriter {
                     id: "technical_terms",
                     displayName: "Technical Terms",
                     keywords: ["Swift", "AppKit", "macOS", "JSONC", "API", "make run", "Cmd+V", "Fn"]
-                )
+                ),
+                llmGroup
             ]
         }
     }
+
+    private static let llmModelKeywords = [
+        "OpenAI",
+        "ChatGPT",
+        "GPT",
+        "Anthropic",
+        "Claude",
+        "Claude Code",
+        "Opus",
+        "Sonnet",
+        "Haiku",
+        "Google",
+        "Gemini",
+        "Gemma",
+        "Llama",
+        "Mistral",
+        "xAI",
+        "Grok",
+        "Qwen",
+        "Qwen3",
+        "Qwen3.5",
+        "Qwen3.6",
+        "Qwen Omni",
+        "DeepSeek",
+        "Kimi",
+        "MiniMax",
+        "Zhipu AI",
+        "智谱",
+        "GLM",
+        "Hunyuan",
+        "StepFun",
+        "阶跃星辰",
+        "SenseNova",
+        "Hermes",
+        "OpenClaw",
+        "Hugging Face"
+    ]
 
     private static func defaultCustomStyle(uiLanguage: UILanguage) -> CustomTranscriptionStyle {
         switch uiLanguage {
@@ -489,8 +533,8 @@ private struct ConfigDocumentText {
 
     var liveASRPreview: [String] {
         language == .chinese
-            ? ["是否在录音期间用系统语音识别显示实时草稿预览。只影响 HUD 显示，最终文本仍使用所选转写管线。"]
-            : ["Whether to show a live System ASR draft in the HUD while recording. This only affects preview; final text still uses the selected pipeline."]
+            ? ["是否在录音期间把系统语音识别文本显示到 HUD。关闭后，音频直转仍可能在后台使用系统语音识别做本地有效语音预判。"]
+            : ["Whether to show live System ASR text in the HUD while recording. When off, Direct Audio may still use system speech in the background for local reliable-speech checks."]
     }
 
     var customStyles: [String] {

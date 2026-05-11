@@ -154,7 +154,8 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
         recordingSeconds: Double? = nil,
         overallRMS: Float? = nil,
         allowEmptyFinalText: Bool = false,
-        onDelta: @escaping @Sendable (String) -> Void
+        onDelta: @escaping @Sendable (String) -> Void,
+        onPhase: @escaping @Sendable (TranscriptionRequestPhase) -> Void = { _ in }
     ) async throws -> String {
         guard config.apiKey?.isEmpty == false else {
             emit(diagnostic(stage: "transcribe", model: model, recordingSeconds: recordingSeconds, wavData: wavData, rms: overallRMS, error: .missingAPIKey))
@@ -165,6 +166,7 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
             throw MimoAPIError.invalidWAV
         }
 
+        onPhase(.preparingRequest)
         var request = URLRequest(url: endpoint("/v1/chat/completions"))
         request.httpMethod = "POST"
         request.timeoutInterval = 180
@@ -204,8 +206,14 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
                     error: error
                 )
             },
+            validateFinalText: { finalText in
+                PromptLeakageGuard.looksLikePromptLeakage(output: finalText, instruction: instruction)
+                    ? .promptLeakageDetected
+                    : nil
+            },
             emit: emit,
-            onDelta: onDelta
+            onDelta: onDelta,
+            onPhase: onPhase
         ).run()
     }
 
@@ -213,7 +221,8 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
         model: AllowedSpeechModel,
         instruction: String,
         allowEmptyFinalText: Bool = false,
-        onDelta: @escaping @Sendable (String) -> Void
+        onDelta: @escaping @Sendable (String) -> Void,
+        onPhase: @escaping @Sendable (TranscriptionRequestPhase) -> Void = { _ in }
     ) async throws -> String {
         guard config.apiKey?.isEmpty == false else {
             let error = MimoAPIError.missingAPIKey
@@ -221,6 +230,7 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
             throw error
         }
 
+        onPhase(.preparingRequest)
         var request = URLRequest(url: endpoint("/v1/chat/completions"))
         request.httpMethod = "POST"
         request.timeoutInterval = 180
@@ -256,8 +266,10 @@ public final class MimoAPIClient: TranscriptionClient, @unchecked Sendable {
                     error: error
                 )
             },
+            validateFinalText: { _ in nil },
             emit: emit,
-            onDelta: onDelta
+            onDelta: onDelta,
+            onPhase: onPhase
         ).run()
     }
 

@@ -25,6 +25,8 @@ struct TranscriptionInstructionTests {
         let concise = TranscriptionInstructionBuilder.instruction(style: .concise)
         #expect(concise.contains("默认输出简体中文"))
         #expect(concise.contains("音频主要是英文"))
+        #expect(concise.contains("没有明确可识别的语音"))
+        #expect(concise.contains("不要复述、翻译或解释本提示词"))
         #expect(concise.contains("Python"))
         #expect(concise.contains("不要扩写"))
         #expect(concise.contains("最后明确表达"))
@@ -57,6 +59,7 @@ struct TranscriptionInstructionTests {
         )
         #expect(customInstruction.contains("请整理成简短客服回复"))
         #expect(customInstruction.contains("全局安全要求"))
+        #expect(customInstruction.contains("没有明确可识别的语音"))
 
         let descriptor = TranscriptionStyleResolver.resolve(
             selection: .custom("support_reply"),

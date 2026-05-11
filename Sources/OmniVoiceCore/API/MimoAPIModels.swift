@@ -13,6 +13,7 @@ public enum MimoAPIError: LocalizedError, Equatable, Sendable {
     case streamEndedBeforeCompletion
     case noDeltaContent
     case emptyFinalText
+    case promptLeakageDetected
     case networkFailure(String)
     case cancelled
 
@@ -42,6 +43,8 @@ public enum MimoAPIError: LocalizedError, Equatable, Sendable {
             return "No transcription delta"
         case .emptyFinalText:
             return "Empty transcription"
+        case .promptLeakageDetected:
+            return "No reliable speech recognized"
         case .networkFailure(let message):
             return message
         case .cancelled:
@@ -63,6 +66,7 @@ public enum MimoAPIError: LocalizedError, Equatable, Sendable {
         case .streamEndedBeforeCompletion: return "stream_ended_before_completion"
         case .noDeltaContent: return "no_delta_content"
         case .emptyFinalText: return "empty_final_text"
+        case .promptLeakageDetected: return "prompt_leakage_detected"
         case .networkFailure: return "network_failure"
         case .cancelled: return "cancelled"
         }
@@ -104,6 +108,75 @@ public enum MimoAPIError: LocalizedError, Equatable, Sendable {
             return .httpStatus(status, preview)
         }
     }
+}
+
+public enum PromptLeakageGuard {
+    private static let highConfidenceMarkers = [
+        "你是 OmniVoice 的语音输入转写器",
+        "核心目标",
+        "语言规则",
+        "允许的整理",
+        "禁止事项",
+        "全局安全要求",
+        "关键词提示（仅用于语音识别消歧）",
+        "请把这段音频转换",
+        "默认输出简体中文",
+        "音频主要是英文",
+        "只输出最终文本",
+        "If there is no clear speech",
+        "Do not explain"
+    ]
+
+    public static func looksLikePromptLeakage(output: String, instruction: String) -> Bool {
+        let displayOutput = collapsedWhitespace(output)
+        guard !displayOutput.isEmpty else { return false }
+        if containsHighConfidenceMarker(displayOutput) {
+            return true
+        }
+
+        let compactOutput = compactForSimilarity(displayOutput)
+        guard compactOutput.count >= 40 else { return false }
+        let compactInstruction = compactForSimilarity(instruction)
+        guard !compactInstruction.isEmpty, compactInstruction.contains(compactOutput) else {
+            return false
+        }
+
+        return compactOutput.count >= 80 || markerHitCount(in: displayOutput) > 0
+    }
+
+    private static func containsHighConfidenceMarker(_ output: String) -> Bool {
+        markerHitCount(in: output) > 0
+    }
+
+    private static func markerHitCount(in output: String) -> Int {
+        let normalized = collapsedWhitespace(output).lowercased()
+        return highConfidenceMarkers.reduce(0) { count, marker in
+            normalized.contains(collapsedWhitespace(marker).lowercased()) ? count + 1 : count
+        }
+    }
+
+    private static func collapsedWhitespace(_ value: String) -> String {
+        value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func compactForSimilarity(_ value: String) -> String {
+        let scalars = value.lowercased().unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+        }
+        return String(String.UnicodeScalarView(scalars))
+    }
+}
+
+public enum TranscriptionRequestPhase: String, CaseIterable, Sendable {
+    case preparingRequest = "preparing_request"
+    case connecting = "connecting"
+    case responseReceived = "response_received"
+    case waitingForFirstDelta = "waiting_for_first_delta"
+    case streaming = "streaming"
+    case completed = "completed"
 }
 
 public enum TextLLMFailureClassifier {
@@ -237,13 +310,15 @@ public protocol TranscriptionClient: Sendable {
         recordingSeconds: Double?,
         overallRMS: Float?,
         allowEmptyFinalText: Bool,
-        onDelta: @escaping @Sendable (String) -> Void
+        onDelta: @escaping @Sendable (String) -> Void,
+        onPhase: @escaping @Sendable (TranscriptionRequestPhase) -> Void
     ) async throws -> String
     func completeText(
         model: AllowedSpeechModel,
         instruction: String,
         allowEmptyFinalText: Bool,
-        onDelta: @escaping @Sendable (String) -> Void
+        onDelta: @escaping @Sendable (String) -> Void,
+        onPhase: @escaping @Sendable (TranscriptionRequestPhase) -> Void
     ) async throws -> String
 }
 

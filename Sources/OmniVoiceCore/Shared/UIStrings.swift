@@ -104,6 +104,9 @@ public struct UIStrings: Sendable {
     public var finishingRecognition: String { language == .chinese ? "正在完成识别" : "Finishing recognition" }
     public var cancelled: String { language == .chinese ? "已取消" : "Cancelled" }
     public var noTextRecognized: String { language == .chinese ? "没有识别到文本" : "No text recognized" }
+    public var noReliableSpeechRecognized: String {
+        language == .chinese ? "没有识别到可靠语音，请重试" : "No reliable speech recognized; please try again"
+    }
     public var textLLMFailedTitle: String { language == .chinese ? "文本模型处理失败，以下是 ASR 草稿" : "Text model failed; ASR draft below" }
     public var textLLMUnsupportedTitle: String {
         language == .chinese
@@ -317,6 +320,10 @@ public struct UIStrings: Sendable {
 
     public var liveASRPreviewBadge: String {
         language == .chinese ? "草稿" : "Draft"
+    }
+
+    public var liveASRRecognitionBadge: String {
+        language == .chinese ? "识别" : "Live"
     }
 
     public func configurationTitle(_ config: MimoConfig) -> String {

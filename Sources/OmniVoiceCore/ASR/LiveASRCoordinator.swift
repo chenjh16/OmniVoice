@@ -2,6 +2,34 @@ import Foundation
 
 @MainActor
 final class LiveASRCoordinator {
+    enum GateState: Equatable, Sendable {
+        case notStarted
+        case running
+        case sawText(characterCount: Int)
+        case startFailed(errorKind: String)
+        case bufferOverflowed
+
+        var diagnosticValue: String {
+            switch self {
+            case .notStarted:
+                return "not_started"
+            case .running:
+                return "running"
+            case .sawText:
+                return "saw_text"
+            case .startFailed:
+                return "start_failed"
+            case .bufferOverflowed:
+                return "buffer_overflowed"
+            }
+        }
+
+        var textCharacterCount: Int {
+            guard case let .sawText(characterCount) = self else { return 0 }
+            return characterCount
+        }
+    }
+
     enum InstallResult: Equatable {
         case installed(bufferOverflowed: Bool)
         case cancelledBecauseNotRecording
@@ -22,6 +50,7 @@ final class LiveASRCoordinator {
     private let bufferLimitSeconds: Double
 
     private(set) var previewText = ""
+    private(set) var gateState: GateState = .notStarted
 
     init(bufferLimitSeconds: Double = 12) {
         self.bufferLimitSeconds = bufferLimitSeconds
@@ -30,10 +59,12 @@ final class LiveASRCoordinator {
     func prepareForStart() {
         cancel()
         previewText = ""
+        gateState = .notStarted
     }
 
     func beginPreparation(_ task: Task<Void, Never>) {
         preparationTask = task
+        gateState = .running
     }
 
     func install(
@@ -55,11 +86,16 @@ final class LiveASRCoordinator {
     }
 
     func handleStartFailure() {
+        handleStartFailure(errorKind: "unknown")
+    }
+
+    func handleStartFailure(errorKind: String) {
         session = nil
         preparationTask = nil
         bufferedChunks.removeAll(keepingCapacity: true)
         bufferedSeconds = 0
         bufferOverflowed = true
+        gateState = .startFailed(errorKind: errorKind)
     }
 
     func append(_ chunk: AudioSampleChunk, shouldRun: Bool) -> AppendResult {
@@ -77,6 +113,7 @@ final class LiveASRCoordinator {
             bufferedChunks.removeAll(keepingCapacity: true)
             bufferedSeconds = 0
             bufferOverflowed = true
+            gateState = .bufferOverflowed
             return .bufferOverflowed(limitSeconds: bufferLimitSeconds)
         }
         return .buffered
@@ -87,9 +124,11 @@ final class LiveASRCoordinator {
         isRecording: Bool,
         previewEnabled: Bool
     ) -> String? {
-        guard isRecording, previewEnabled else { return nil }
+        guard isRecording else { return nil }
         let text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
+        gateState = .sawText(characterCount: text.count)
+        guard previewEnabled else { return nil }
         previewText = text
         return text
     }
@@ -102,6 +141,7 @@ final class LiveASRCoordinator {
         bufferedSeconds = 0
         bufferOverflowed = false
         previewText = ""
+        gateState = .notStarted
 
         guard useForSystemPipeline, !overflowed else {
             task?.cancel()
@@ -129,6 +169,7 @@ final class LiveASRCoordinator {
         bufferedSeconds = 0
         bufferOverflowed = false
         previewText = ""
+        gateState = .notStarted
     }
 
     private func takeSession() -> (any LiveSystemSpeechRecognitionSession)? {

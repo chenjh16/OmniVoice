@@ -169,6 +169,48 @@
         "Cmd+V",
         "Fn"
       ]
+    },
+    // Keyword group llm_model_terms.
+    "llm_model_terms": {
+      // Display name. The same name is shown in every UI language.
+      "display_name": "LLM Models and Companies",
+      // Keyword list. Up to 200 per group and 500 injected in total; do not include newlines or control characters.
+      "keywords": [
+        "OpenAI",
+        "ChatGPT",
+        "GPT",
+        "Anthropic",
+        "Claude",
+        "Claude Code",
+        "Opus",
+        "Sonnet",
+        "Haiku",
+        "Google",
+        "Gemini",
+        "Gemma",
+        "Llama",
+        "Mistral",
+        "xAI",
+        "Grok",
+        "Qwen",
+        "Qwen3",
+        "Qwen3.5",
+        "Qwen3.6",
+        "Qwen Omni",
+        "DeepSeek",
+        "Kimi",
+        "MiniMax",
+        "Zhipu AI",
+        "智谱",
+        "GLM",
+        "Hunyuan",
+        "StepFun",
+        "阶跃星辰",
+        "SenseNova",
+        "Hermes",
+        "OpenClaw",
+        "Hugging Face"
+      ]
     }
   }
 }

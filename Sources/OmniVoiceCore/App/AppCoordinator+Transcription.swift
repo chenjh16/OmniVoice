@@ -33,6 +33,11 @@ extension AppCoordinator {
                             DispatchQueue.main.async {
                                 self?.hud.appendTranscriptionDelta(delta)
                             }
+                        },
+                        onPhase: { [weak self] phase in
+                            DispatchQueue.main.async {
+                                self?.hud.updateTranscriptionRequestPhase(phase)
+                            }
                         }
                     )
                 case .systemASRTextLLM:
@@ -81,6 +86,11 @@ extension AppCoordinator {
                 onDelta: { [weak self] delta in
                     DispatchQueue.main.async {
                         self?.hud.appendTranscriptionDelta(delta)
+                    }
+                },
+                onPhase: { [weak self] phase in
+                    DispatchQueue.main.async {
+                        self?.hud.updateTranscriptionRequestPhase(phase)
                     }
                 }
             )

@@ -39,13 +39,13 @@ public enum MenuTooltipCatalog {
             麦克风：点击后，在系统弹窗里选择允许。
             辅助功能和输入监控：macOS 可能只显示“去系统设置开启”的权限引导小对话框，并且它可能出现在其他 Space；若当前桌面没看到，请检查 Mission Control、其他 Space 或 Cmd+Tab。
             若列表中已有 OmniVoice 但仍无效，请移除后通过 + 重新添加 /Applications/OmniVoice.app。
-            语音识别：点击后，在系统弹窗里选择允许；仅语音识别 + 文本转写或实时预览需要。
+            语音识别：点击后，在系统弹窗里选择允许；用于系统识别管线、实时预览，以及音频直转前的本地有效语音预判。
             """,
             .english: """
             Microphone: click, then choose Allow in the system prompt.
             Accessibility and Input Monitoring: macOS may show a small "open System Settings" permission guidance dialog, and it may appear in another Space. If it is not on the current desktop, check Mission Control, other Spaces, or Cmd+Tab.
             If OmniVoice is already listed but still missing permission, remove it and add /Applications/OmniVoice.app again.
-            Speech Recognition: click, then choose Allow in the system prompt; only Speech Recognition + Text Rewrite or live preview needs it.
+            Speech Recognition: click, then choose Allow in the system prompt; used for system speech pipelines, live preview, and local speech-quality checks before Direct Audio requests.
             """
         ],
         .requestMicrophone: [
@@ -61,8 +61,8 @@ public enum MenuTooltipCatalog {
             .english: "Click to ask macOS to register OmniVoice and open the Input Monitoring page in System Settings. macOS may not show an Allow/Deny prompt; the small permission guidance dialog can appear in another Space. If it is not on the current desktop, check Mission Control, other Spaces, or Cmd+Tab. If OmniVoice is listed but still missing permission, remove it and add /Applications/OmniVoice.app again."
         ],
         .requestSpeechRecognition: [
-            .chinese: "点击后，在系统弹窗里选择允许。只有使用语音识别 + 文本转写或实时 ASR 预览时才需要。",
-            .english: "Click, then choose Allow in the system prompt. Only Speech Recognition + Text Rewrite or Live ASR Preview needs it."
+            .chinese: "点击后，在系统弹窗里选择允许。OmniVoice 会用它生成系统识别草稿、实时预览，并在音频直转前本地判断是否听到可靠语音。",
+            .english: "Click, then choose Allow in the system prompt. OmniVoice uses it for system speech drafts, live preview, and local reliable-speech checks before Direct Audio requests."
         ],
         .transcriptionMode: [
             .chinese: "选择直接把音频交给多模态模型，或先用 macOS 识别再交给文本模型修正。",
@@ -133,8 +133,8 @@ public enum MenuTooltipCatalog {
             .english: "Adjust HUD style, live draft preview, short-message duration, and how quickly the listening HUD appears."
         ],
         .liveASRPreview: [
-            .chinese: "录音时用系统语音识别在 HUD 中显示实时文本。它只是预览，最终文本仍由当前转写模式生成。",
-            .english: "Show live system speech text in the HUD while recording. It is preview-only; final text still comes from the selected transcription mode."
+            .chinese: "录音时把系统语音识别文本显示在 HUD 中。关闭后仍可能在后台用于音频直转前的本地有效语音预判。",
+            .english: "Show live system speech text in the HUD while recording. When off, system speech may still run in the background for local Direct Audio quality checks."
         ],
         .hudMessageDuration: [
             .chinese: "设置短提示自动消失前停留多久。",
@@ -173,14 +173,14 @@ public enum MenuTooltipCatalog {
             麦克风：按住触发键时录下你的声音。
             辅助功能：确认当前输入框是否可以写入，并在可行时放入文字。
             输入监控：识别你按下和松开触发键的动作。
-            语音识别：使用语音识别 + 文本转写或实时预览时，把语音转成草稿。
+            语音识别：生成系统识别草稿、实时预览，并在音频直转前本地判断是否听到可靠语音。
             """
         case .english:
             return """
             Microphone: records your voice while you hold the trigger key.
             Accessibility: checks whether the current text field can receive text and inserts it when possible.
             Input Monitoring: notices when you press and release the trigger key.
-            Speech Recognition: turns speech into a draft for Speech Recognition + Text Rewrite or live preview.
+            Speech Recognition: creates system speech drafts, powers live preview, and locally checks for reliable speech before Direct Audio requests.
             """
         }
     }

@@ -34,6 +34,46 @@ struct RecordingAndWAVTests {
     }
 
     @Test
+    func directAudioASRGateBlocksOnlyLowRMSNoTextDirectAudio() {
+        #expect(DirectAudioASRGatePlanner.strongSpeechRMS == 0.018)
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .inputAudio,
+            gateState: .running,
+            overallRMS: 0.005
+        ) == .block(errorKind: "asr_gate_no_text"))
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .inputAudio,
+            gateState: .running,
+            overallRMS: 0.018
+        ) == .allow(reason: "asr_gate_bypassed_strong_rms"))
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .inputAudio,
+            gateState: .sawText(characterCount: 4),
+            overallRMS: 0.001
+        ) == .allow(reason: "asr_gate_saw_text"))
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .inputAudio,
+            gateState: .startFailed(errorKind: "speech_not_authorized"),
+            overallRMS: 0.001
+        ) == .allow(reason: "asr_gate_unavailable"))
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .inputAudio,
+            gateState: .bufferOverflowed,
+            overallRMS: 0.001
+        ) == .allow(reason: "asr_gate_unavailable"))
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .systemASRTextLLM,
+            gateState: .running,
+            overallRMS: 0.001
+        ) == .allow(reason: "not_input_audio"))
+        #expect(DirectAudioASRGatePlanner.decision(
+            mode: .systemASROnly,
+            gateState: .running,
+            overallRMS: 0.001
+        ) == .allow(reason: "not_input_audio"))
+    }
+
+    @Test
     func hudRevealAndShortRecordingPresentationPlannersFavorLowInterruption() {
         #expect(ListeningHUDRevealPlanner.defaultDelaySeconds == 0.10)
         #expect(HUDRevealDelay.defaultDelay == .milliseconds100)

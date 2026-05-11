@@ -77,6 +77,9 @@ extension AppCoordinator {
     }
 
     func sanitizedMessage(for error: Error) -> String {
+        if let mimoError = error as? MimoAPIError, mimoError == .promptLeakageDetected {
+            return strings.noReliableSpeechRecognized
+        }
         let description = (error as? LocalizedError)?.errorDescription ?? "操作失败"
         if description.count > 90 {
             return String(description.prefix(90)) + "…"

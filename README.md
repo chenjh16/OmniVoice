@@ -182,6 +182,45 @@ OmniVoice 内部带有一份完整默认配置，并只从 `~/.config/omnivoice/
         "Cmd+V",
         "Fn"
       ]
+    },
+    "llm_model_terms": {
+      "display_name": "大模型与模型公司",
+      "keywords": [
+        "OpenAI",
+        "ChatGPT",
+        "GPT",
+        "Anthropic",
+        "Claude",
+        "Claude Code",
+        "Opus",
+        "Sonnet",
+        "Haiku",
+        "Google",
+        "Gemini",
+        "Gemma",
+        "Llama",
+        "Mistral",
+        "xAI",
+        "Grok",
+        "Qwen",
+        "Qwen3",
+        "Qwen3.5",
+        "Qwen3.6",
+        "Qwen Omni",
+        "DeepSeek",
+        "Kimi",
+        "MiniMax",
+        "Zhipu AI",
+        "智谱",
+        "GLM",
+        "Hunyuan",
+        "StepFun",
+        "阶跃星辰",
+        "SenseNova",
+        "Hermes",
+        "OpenClaw",
+        "Hugging Face"
+      ]
     }
   }
 }
@@ -207,7 +246,7 @@ chmod 600 ~/.config/omnivoice/config.jsonc
 
 可以用 `custom_styles` 添加自己的转写 prompt。每个风格需要一个安全 ID、显示名称，以及 `prompt` 或 `prompt_lines`。自定义风格会在风格菜单和结果面板风格切换中标记为 `自定义`。
 
-可以用 `keyword_groups` 添加多组关键词，再通过菜单里的 `关键词` 分组勾选控制是否注入。关键词默认未启用且不预选任何分组；勾选任一分组会自动启用，取消最后一个分组会自动回到未启用。关键词只作为识别消歧提示使用：模型会在发音和上下文合理时优先参考它们，但不会因为列表里有某个词就强行输出。每组最多使用 200 个关键词，总计最多注入 500 个。`custom_styles` 和 `keyword_groups` 只需要可选的 `display_name`；没有 `display_name` 时菜单显示对应 ID，不再维护 `*_zh` 或 `description` 字段。
+可以用 `keyword_groups` 添加多组关键词，再通过菜单里的 `关键词` 分组勾选控制是否注入。关键词默认未启用且不预选任何分组；勾选任一分组会自动启用，取消最后一个分组会自动回到未启用。默认模板包含 `llm_model_terms` 分组，用于常见大模型公司、模型系列和模型名，例如 OpenAI/GPT、Anthropic/Claude/Claude Code、Google/Gemini、Qwen、DeepSeek、Kimi、Llama、Mistral、Grok、GLM、Hunyuan、SenseNova、Hermes、OpenClaw 和 Hugging Face 等。关键词只作为识别消歧提示使用：模型会在发音和上下文合理时优先参考它们，但不会因为列表里有某个词就强行输出。每组最多使用 200 个关键词，总计最多注入 500 个。`custom_styles` 和 `keyword_groups` 只需要可选的 `display_name`；没有 `display_name` 时菜单显示对应 ID，不再维护 `*_zh` 或 `description` 字段。
 
 OmniVoice 会监听 `config.jsonc` 的保存和更新。有效配置会自动热更新，并显示一条短暂 HUD 提示；如果热更新时文件格式或必要字段有问题，OmniVoice 会继续使用上一份有效配置，把当前运行配置导出为 `config.current-YYYYMMDD-HHMMSS.jsonc`，并提示你检查原配置文件。
 
@@ -218,7 +257,7 @@ OmniVoice 启动时和每次打开菜单时都会检查权限：
 - 麦克风：使用 `AVAudioEngine` 录音。
 - 辅助功能：检查当前输入框是否可以接收文本，并在安全时写入。
 - 输入监控：感知触发键的按下和松开。
-- 语音识别：使用 `语音识别 + 文本转写` 或 `仅系统 ASR` 模式时调用 macOS Speech 生成最终草稿。
+- 语音识别：调用 macOS Speech 生成 `语音识别 + 文本转写` / `仅系统 ASR` 的最终草稿，也用于音频直转在发起模型请求前做本地有效语音预判。
 
 如果已经打开当前 App 的权限，但 OmniVoice 仍显示无法获得对应权限，请不要只反复开关权限；先在对应的隐私设置中移除 OmniVoice，再点击 `+` 重新添加 `/Applications/OmniVoice.app`，最后重新打开权限。macOS 隐私权限和 App 路径相关，因此使用已安装 App 路径很重要。
 
@@ -242,7 +281,7 @@ make run SIGN_IDENTITY="OmniVoice Local Development"
 
 菜单按控制、配置、转写、体验/系统和最后 App 操作分段组织，包含 `停止` 或 `重新启用`、状态、权限、脱敏 Base URL/API Key、`转写：音频直转 · <model>`、`转写：语音识别 + 文本转写 · <model>` 或 `转写：仅系统 ASR · <engine>`、`配置`、`语言`、`风格`、`关键词`、`触发键`、`录音时长`、`开机自启`、`自动插入`、`提示与显示`、`权限管理`、`重启` 和 `退出`。主菜单不再显示只读的 `来源：...` 行，API 来源只在配置子菜单中操作。
 
-`提示与显示` 子菜单包含 `实时 ASR 预览`、`HUD 样式`、`提示显示时长` 和 `HUD 弹出延迟`。实时 ASR 预览默认关闭；开启后录音期间会用系统语音识别在 HUD 中显示实时文本。音频直转和语音识别 + 文本转写会显示自绘居中的 `草稿` 徽标和草稿尾部；仅系统 ASR 模式不显示 `草稿` 徽标，因为该文本就是当前模式的最终来源。`语音识别 + 文本转写` 和 `仅系统 ASR` 都会保留最短录音时长检查，但不会因为本地 RMS 偏低而跳过已有 ASR final；仅系统 ASR 松手后只显示“正在完成识别”，不显示模型转写进度条。HUD 弹出延迟默认 100ms，可选 100ms、200ms、300ms、400ms、500ms；录音仍会在按下触发键时立即开始。
+`提示与显示` 子菜单包含 `实时 ASR 预览`、`HUD 样式`、`提示显示时长` 和 `HUD 弹出延迟`。实时 ASR 预览默认关闭；开启后录音期间会用系统语音识别在 HUD 中显示实时文本。音频直转和语音识别 + 文本转写会显示自绘居中的 `草稿` 徽标和最近草稿尾部；仅系统 ASR 显示 `识别` 徽标，表示这是当前模式会直接使用的实时识别文本。即使关闭 HUD 预览，音频直转也会在录音期间同步收集系统 ASR 证据，用于松手后本地判断是否听到可靠语音；如果系统 ASR 正常运行但没有任何文字且 RMS 不强，OmniVoice 会直接提示重试，不调用大模型 API。HUD 展示层会折叠 ASR partial 中的换行和连续空白，避免单行预览出现大段空格；长文本不显示省略号，而是在左侧使用约 100px 渐隐来提示前文被裁掉；同一次录音里 HUD 只会随预览增长，不会因为系统 ASR 修订出更短 partial 而突然回缩。`语音识别 + 文本转写` 和 `仅系统 ASR` 都会保留最短录音时长检查，但不会因为本地 RMS 偏低而跳过已有 ASR final；仅系统 ASR 松手后只显示“正在完成识别”，不显示模型转写进度条。睡眠、唤醒、锁屏或解锁后，OmniVoice 会取消残留 live ASR 会话，短时间优先经典 Speech，并延迟探测 SpeechAnalyzer 是否恢复，避免必须重启 App 才能恢复实时预览。HUD 弹出延迟默认 100ms，可选 100ms、200ms、300ms、400ms、500ms；录音仍会在按下触发键时立即开始。
 
 模型选择、转写模式、系统 ASR 设置、重新加载配置、刷新模型、API 来源、测速设置、打开配置文件，以及合并后的检查连接与测速都位于配置子菜单内。`模型` 子菜单先显示模式，再只显示当前模式对应的模型列表：音频直转时不显示文本模型设置，语音识别 + 文本转写时不显示音频模型设置，仅系统 ASR 时显示只读提示 `此模式不使用大模型`。`API 来源` 子菜单底部有 `仅使用系统 ASR 能力` 勾选项；开启后来源项不可选，再次点击会回到音频直转。模型子菜单底部提供 `编辑模型列表`，会复用打开 config 文件逻辑并尽量定位到 `models.audio_llm`，方便直接修改 Audio LLM 候选和 `models.text_llm.default_model`。`语言` 菜单控制 UI 语言；转写输出默认简体中文，如果音频主要是英文则输出英文。
 
@@ -256,7 +295,8 @@ make run SIGN_IDENTITY="OmniVoice Local Development"
 - 自动插入会对标准原生文本框优先使用保守辅助功能写入，再回退到保存剪贴板 + Cmd+V。
 - Secure text field、密码、验证码、token/API-key-like 输入框、无焦点、缺权限、粘贴失败和关闭自动插入都会进入置顶 ActionPanel。
 - 如果有效本地录音后的转写失败，OmniVoice 会把 WAV 保留在内存中，并提供重试/取消，不要求你重新说一遍。
-- `HUD 样式` 在 macOS 14/15 上支持 Automatic、Dark Capsule 和 Light Capsule。Automatic 会跟随系统亮暗外观：浅色系统使用浅色胶囊，深色系统使用深色胶囊。Liquid Glass 只会在 macOS 26+ 且系统原生 glass view 可用时显示。
+- 模型转写阶段的细进度条会跟随 OpenAI-compatible streaming 请求阶段变化：准备和连接阶段先使用较短上限，收到 HTTP 响应和等待首个 delta 时继续推进，首个流式文本到达后切换到更稳定的流式状态颜色，并且只在完成事件后到 100%。
+- `HUD 样式` 在 macOS 14/15 上支持 Automatic、Dark Capsule 和 Light Capsule。Automatic 会跟随系统亮暗外观：浅色系统使用浅色胶囊，深色系统使用深色胶囊。Liquid Glass 只会在 macOS 26+ 且系统原生 glass view 可用时显示；HUD 和 ActionPanel 会共用原生玻璃、圆角外部深度和外描边文字光晕，避免亮背景下文字被描边吃细。
 - `提示显示时长` 控制短状态或 warning 提示显示多久。
 - `HUD 弹出延迟` 只影响 HUD 何时出现，不影响录音开始时间；组合快捷键会在 HUD 出现前静默取消。
 - 录音波形使用实时 RMS：安静环境下低幅慢速运动，说话 attack 和近期音节会更快影响速度和振幅。
@@ -297,7 +337,7 @@ make test
 make check
 ```
 
-`make build` 默认会 ad-hoc 签名 `.build/OmniVoice.app`，并安装不带 E2E 注入入口的发布形态 binary。`make install` 会先退出正在运行的已安装 OmniVoice，再把签名后的 bundle 复制到 `/Applications/OmniVoice.app`；`make run` 会先安装再打开这个已安装的 bundle。只有在明确需要从构建目录启动时才使用 `make dev-run`。GUI E2E harness 需要安装带隐藏 E2E 命令的同名 bundle，请使用 `make run ENABLE_E2E=1`；完成验证后再运行普通 `make run` 可恢复发布形态安装。`make check` 会执行 `git diff --check`、`swift test` 和 `make build`。
+`make build` 默认会 ad-hoc 签名 `.build/OmniVoice.app`，并安装不带 E2E 注入入口的发布形态 binary。`make install` 会先退出正在运行的已安装 OmniVoice，再把签名后的 bundle 复制到 `/Applications/OmniVoice.app`；`make run` 会先安装再打开这个已安装的 bundle。只有在明确需要从构建目录启动时才使用 `make dev-run`。GUI E2E harness 需要安装带隐藏 E2E 命令的同名 bundle，请使用 `make run ENABLE_E2E=1`；因为音频直转也会启动 live ASR 证据收集，任何可能触发语音识别或其它隐私用途说明的 GUI E2E 都应使用 `--launch-services` 通过完整 `.app` bundle 启动。完成验证后再运行普通 `make run` 可恢复发布形态安装。`make check` 会执行 `git diff --check`、`swift test` 和 `make build`。
 
 涉及辅助功能、输入监控或反复重装验证时，优先使用稳定签名身份，而不是默认 ad-hoc 签名。当前本机开发验证使用的身份名是 `OmniVoice Local Development`：
 
@@ -490,6 +530,45 @@ Example config:
         "Cmd+V",
         "Fn"
       ]
+    },
+    "llm_model_terms": {
+      "display_name": "LLM Models and Companies",
+      "keywords": [
+        "OpenAI",
+        "ChatGPT",
+        "GPT",
+        "Anthropic",
+        "Claude",
+        "Claude Code",
+        "Opus",
+        "Sonnet",
+        "Haiku",
+        "Google",
+        "Gemini",
+        "Gemma",
+        "Llama",
+        "Mistral",
+        "xAI",
+        "Grok",
+        "Qwen",
+        "Qwen3",
+        "Qwen3.5",
+        "Qwen3.6",
+        "Qwen Omni",
+        "DeepSeek",
+        "Kimi",
+        "MiniMax",
+        "Zhipu AI",
+        "智谱",
+        "GLM",
+        "Hunyuan",
+        "StepFun",
+        "阶跃星辰",
+        "SenseNova",
+        "Hermes",
+        "OpenClaw",
+        "Hugging Face"
+      ]
     }
   }
 }
@@ -511,11 +590,11 @@ chmod 600 ~/.config/omnivoice/config.jsonc
 
 `transcription_pipeline.mode` supports `input_audio`, `system_asr_text_llm`, and `system_asr_only`. Menu labels show these as `Direct Audio`, `Speech Recognition + Text Rewrite`, and `System ASR Only`. The `input_audio` pipeline selects its audio LLM through `models.audio_llm`, defaults to `mimo-v2.5`, and lets you add `mimo-v2-omni`, GPT Audio, Gemini, Qwen Omni, or other candidates. `system_asr_text_llm` marks the system ASR draft as unreliable, then asks the text model stored in `models.text_llm.default_model` to correct, rewrite, and apply style. `system_asr_only` uses only the current `system_asr.engine` final ASR text and does not use models, style rewriting, or LLM prompts. The Text LLM menu shows the union of models observed from reachable API sources via `/v1/models`, while hiding obvious TTS, voiceclone, and voicedesign models. If an observed model still does not support text completion, OmniVoice shows an ActionPanel hint to choose another text model instead of silently inserting the ASR draft.
 
-`system_asr.engine` supports `classic_speech`, `speech_analyzer`, and `apple_online_speech`. The default `speech_analyzer` engine is the macOS 26+ on-device SpeechAnalyzer adapter; `classic_speech` is on-device classic Speech; `apple_online_speech` is an explicit Apple online recognition choice. macOS can use Apple online recognition for free, but audio may be sent to Apple and usage can be limited by Apple service availability, daily limits, and roughly one-minute task limits.
+`system_asr.engine` supports `classic_speech`, `speech_analyzer`, and `apple_online_speech`. The default `speech_analyzer` engine is the macOS 26+ on-device SpeechAnalyzer adapter; `classic_speech` is on-device classic Speech; `apple_online_speech` is an explicit Apple online recognition choice. After sleep, wake, lock, or unlock, OmniVoice cancels residual live ASR sessions, briefly prefers classic Speech, and probes SpeechAnalyzer again so live preview can recover without restarting the app. macOS can use Apple online recognition for free, but audio may be sent to Apple and usage can be limited by Apple service availability, daily limits, and roughly one-minute task limits.
 
 Use `custom_styles` to add your own transcription prompts. Each style needs a safe ID, a display name, and either `prompt` or `prompt_lines`. Custom styles are marked as `Custom` in the Style menu and in the result panel style switcher.
 
-Use `keyword_groups` to add multiple keyword groups, then select groups in the `Keyword Hints` menu to inject them. Keyword hints are off by default with no preselected groups; selecting any group turns hints on, and clearing the final group turns them off again. Keywords are recognition hints only: the model should prefer them when the audio and context fit, but should not force a listed word into the result. Each group uses at most 200 keywords, and at most 500 keywords are injected in total. `custom_styles` and `keyword_groups` only need an optional `display_name`; if it is missing, menus show the ID. `*_zh` and `description` fields are no longer written or parsed.
+Use `keyword_groups` to add multiple keyword groups, then select groups in the `Keyword Hints` menu to inject them. Keyword hints are off by default with no preselected groups; selecting any group turns hints on, and clearing the final group turns them off again. The default template includes `llm_model_terms` for common LLM companies, model families, and model names, such as OpenAI/GPT, Anthropic/Claude/Claude Code, Google/Gemini, Qwen, DeepSeek, Kimi, Llama, Mistral, Grok, GLM, Hunyuan, SenseNova, Hermes, OpenClaw, and Hugging Face. Keywords are recognition hints only: the model should prefer them when the audio and context fit, but should not force a listed word into the result. Each group uses at most 200 keywords, and at most 500 keywords are injected in total. `custom_styles` and `keyword_groups` only need an optional `display_name`; if it is missing, menus show the ID. `*_zh` and `description` fields are no longer written or parsed.
 
 OmniVoice watches `config.jsonc` for saves and updates. Valid changes hot-reload automatically and show a brief HUD confirmation. If a hot reload finds invalid JSON or missing required fields, OmniVoice keeps using the last valid in-memory config, exports the current running config as `config.current-YYYYMMDD-HHMMSS.jsonc`, and asks you to check the original file.
 
@@ -526,7 +605,7 @@ OmniVoice checks permissions at launch and each time the menu opens:
 - Microphone records speech with `AVAudioEngine`.
 - Accessibility checks whether the current text field can receive text, then inserts when possible.
 - Input Monitoring lets OmniVoice notice when you press and release the trigger key.
-- Speech Recognition lets macOS Speech create the final draft used by `Speech Recognition + Text Rewrite` and `System ASR Only` modes.
+- Speech Recognition lets macOS Speech create the final draft used by `Speech Recognition + Text Rewrite` and `System ASR Only`, and it also supports Direct Audio's local reliable-speech check before a model request is sent.
 
 If you already enabled the permission for the current app but OmniVoice still cannot obtain it, do not just toggle the permission repeatedly. Remove OmniVoice from the matching Privacy & Security permission page, click `+` to add `/Applications/OmniVoice.app` again, then enable the permission again. macOS privacy permissions are path-sensitive, so using the installed app path matters.
 
@@ -550,7 +629,7 @@ All settings live in the menu bar. There is no Dock icon, Settings window, popov
 
 The menu is grouped as control, configuration, transcription, experience/system, and final app actions. It includes `Stop` or `Re-enable`, status, permissions, redacted Base URL/API Key, `Transcription: Direct Audio · <model>`, `Transcription: Speech Recognition + Text Rewrite · <model>`, or `Transcription: System ASR Only · <engine>`, `Configuration`, `Language`, `Transcription Style`, `Keyword Hints`, `Trigger Key`, `Recording Duration`, `Launch at Login`, `Auto Insert`, `Display & Hints`, `Permission Management`, `Restart`, and `Quit`. The top-level read-only `Source: ...` row is gone; API sources are changed only inside the Configuration submenu.
 
-`Display & Hints` contains `Live ASR Preview`, `HUD Style`, `Message Duration`, and `HUD Reveal Delay`. Live ASR Preview defaults off; when enabled, OmniVoice shows live system-ASR text while recording. Direct Audio and Speech Recognition + Text Rewrite show a self-drawn vertically centered `Draft` badge plus the preview tail; System ASR Only omits the `Draft` badge because that text is the final source for the active mode. `Speech Recognition + Text Rewrite` and `System ASR Only` keep the minimum-duration check but do not skip an available ASR final just because local RMS is low; after release, System ASR Only shows `Finishing recognition` without the model transcription progress bar. HUD Reveal Delay defaults to 100ms and offers 100ms, 200ms, 300ms, 400ms, and 500ms; recording still starts immediately when the trigger is pressed.
+`Display & Hints` contains `Live ASR Preview`, `HUD Style`, `Message Duration`, and `HUD Reveal Delay`. Live ASR Preview defaults off; when enabled, OmniVoice shows live system-ASR text while recording. Direct Audio and Speech Recognition + Text Rewrite show a self-drawn vertically centered `Draft` badge plus the most recent preview tail; System ASR Only shows a `Live` badge because that text is the recognition stream the active mode will use directly. Even when HUD preview is off, Direct Audio records live system-ASR evidence in parallel so release can locally decide whether reliable speech was heard; if system ASR ran normally but produced no text and RMS is not strong, OmniVoice asks you to retry without calling the model API. The HUD display layer collapses line breaks and repeated whitespace from ASR partials so the single-line preview does not show large blank gaps. Long text does not use an ellipsis, and instead uses an approximately 100px left fade to show that earlier text has been clipped; within one recording, the HUD grows with the preview and does not suddenly shrink when system ASR revises a shorter partial. `Speech Recognition + Text Rewrite` and `System ASR Only` keep the minimum-duration check but do not skip an available ASR final just because local RMS is low; after release, System ASR Only shows `Finishing recognition` without the model transcription progress bar. After sleep, wake, lock, or unlock, OmniVoice cancels residual live ASR sessions, briefly prefers classic Speech, and probes SpeechAnalyzer again so live preview can recover without restarting the app. HUD Reveal Delay defaults to 100ms and offers 100ms, 200ms, 300ms, 400ms, and 500ms; recording still starts immediately when the trigger is pressed.
 
 Model selection, transcription mode, System ASR settings, Reload Config, Refresh Models, API Source, latency settings, config opening, and the combined Check Connection & Latency action live inside the Configuration submenu. The `Model` submenu shows mode choices first, then only the model list for the active mode: text-model settings are hidden in Direct Audio mode, input-audio settings are hidden in Speech Recognition + Text Rewrite mode, and System ASR Only shows a read-only `This mode does not use an LLM` item. The `API Source` submenu has a separated bottom `Use System ASR Only` check item; enabling it disables API source choices, and clicking it again returns to Direct Audio. A separated bottom `Edit Model List` action reuses the config-file opener and tries to jump to `models.audio_llm`, so you can edit Audio LLM candidates and `models.text_llm.default_model` directly. The `Language` menu controls UI language; transcription output defaults to simplified Chinese and switches to English when the audio is mainly English.
 
@@ -564,7 +643,8 @@ Direct Audio mode defaults to `mimo-v2.5`, with `mimo-v2-omni` and third-party A
 - Auto insertion uses conservative Accessibility insertion for standard native text fields, then falls back to clipboard preservation plus Cmd+V.
 - Secure text fields, passwords, verification codes, token/API-key-like fields, missing focus, missing permissions, paste failures, and disabled Auto Insert all use the topmost ActionPanel.
 - If transcription fails after a valid local recording, OmniVoice keeps the WAV in memory and offers Retry/Cancel without requiring you to speak again.
-- `HUD Style` supports Automatic, Dark Capsule, and Light Capsule on macOS 14/15. Automatic follows the system appearance: light mode uses the light capsule, and dark mode uses the dark capsule. Liquid Glass appears only on macOS 26+ when the native glass view is available.
+- During model-backed transcription, the thin progress bar follows the OpenAI-compatible streaming request phase: preparation and connection start with lower caps, HTTP response and first-delta waiting advance the bar, the first streamed text chunk switches to a steadier streaming color, and 100% appears only after completion.
+- `HUD Style` supports Automatic, Dark Capsule, and Light Capsule on macOS 14/15. Automatic follows the system appearance: light mode uses the light capsule, and dark mode uses the dark capsule. Liquid Glass appears only on macOS 26+ when the native glass view is available; HUD and ActionPanel share native glass, rounded external depth, and an outer text halo so bright backgrounds do not thin the glyph body.
 - `Message Duration` controls how long short status or warning messages remain visible.
 - `HUD Reveal Delay` only controls when the HUD appears, not when recording starts; trigger-key combinations cancel silently before the HUD appears.
 - Recording waveform uses live RMS: quiet rooms get slower low-amplitude motion, while speech attacks and recent syllables quickly affect speed and amplitude.
@@ -605,7 +685,7 @@ make test
 make check
 ```
 
-`make build` ad-hoc signs `.build/OmniVoice.app` by default and installs the release-shaped binary without the E2E injection entrypoint. `make install` first quits the running installed OmniVoice, then copies the signed bundle to `/Applications/OmniVoice.app`; `make run` installs first and opens that installed bundle. Use `make dev-run` only when you deliberately want to launch from the build directory. The GUI E2E harness needs the same bundle with the hidden E2E command, so install it with `make run ENABLE_E2E=1`; run normal `make run` again after validation to restore the release-shaped install. `make check` runs `git diff --check`, `swift test`, and `make build`.
+`make build` ad-hoc signs `.build/OmniVoice.app` by default and installs the release-shaped binary without the E2E injection entrypoint. `make install` first quits the running installed OmniVoice, then copies the signed bundle to `/Applications/OmniVoice.app`; `make run` installs first and opens that installed bundle. Use `make dev-run` only when you deliberately want to launch from the build directory. The GUI E2E harness needs the same bundle with the hidden E2E command, so install it with `make run ENABLE_E2E=1`; because Direct Audio can start live ASR evidence collection, any GUI E2E that may touch Speech Recognition or another privacy usage description should use `--launch-services` to run through the full `.app` bundle. Run normal `make run` again after validation to restore the release-shaped install. `make check` runs `git diff --check`, `swift test`, and `make build`.
 
 For Accessibility, Input Monitoring, or repeated reinstall validation, prefer a stable signing identity instead of default ad-hoc signing. The current local validation identity is `OmniVoice Local Development`:
 

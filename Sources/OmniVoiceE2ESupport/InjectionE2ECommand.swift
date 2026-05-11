@@ -115,7 +115,7 @@ public enum InjectionE2ECommand {
     Usage:
       OmniVoice --omnivoice-injection-e2e --fixture-wav /tmp/sample.wav [--config-path /tmp/config.jsonc] [--style concise] [--model mimo-v2.5] [--target-bundle BUNDLE] [--expect-keyword WORD ...]
       OmniVoice --omnivoice-injection-e2e --replay-wav /tmp/sample.wav [--config-path /tmp/config.jsonc] [--style concise] [--model mimo-v2.5] [--hud-style darkCapsule] [--ui-language en] [--replay-speed 1.0] [--target-bundle BUNDLE] [--force-action-panel] [--gui-artifacts-dir DIR] [--record-gui-frames] [--gui-frame-interval-ms 83] [--expect-keyword WORD ...] [--output-json /tmp/result.json]
-      OmniVoice --omnivoice-hud-preview-e2e [--hud-style darkCapsule] [--ui-language zh] [--preview-text TEXT] [--gui-artifacts-dir DIR]
+      OmniVoice --omnivoice-hud-preview-e2e [--hud-style darkCapsule] [--ui-language zh] [--preview-text TEXT] [--preview-badge TEXT] [--hold-ms 350] [--gui-artifacts-dir DIR]
 
     Notes:
       The JSON result is redacted: it includes character counts, keyword quality counts, strategy outcomes, bundle ids, and error classes, but never the transcript or clipboard contents.
@@ -148,12 +148,14 @@ public enum InjectionE2ECommand {
                 ?? (language == .chinese
                     ? "这是一个实时语音识别草稿，松手后才会生成最终转写。"
                     : "This is a live speech draft; final text is produced after release.")
+            let previewBadge = parser.value(after: "--preview-badge")?.nilIfBlank ?? strings.liveASRPreviewBadge
             let artifactRecorder = try artifactRecorder(parser: parser)
             let hud = DictationHUDController()
             hud.setVisualStyle(style)
             hud.showListening(text: strings.listening)
-            hud.updateListeningPreview(previewText, badge: strings.liveASRPreviewBadge)
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            hud.updateListeningPreview(previewText, badge: previewBadge)
+            let holdMilliseconds = max(0, Int(parser.value(after: "--hold-ms") ?? "350") ?? 350)
+            try? await Task.sleep(nanoseconds: UInt64(holdMilliseconds) * 1_000_000)
             let snapshot = hud.diagnosticSnapshot
             let pngData = hud.renderedPNGData()
             artifactRecorder?.record(AutomationEvent(
@@ -161,7 +163,7 @@ public enum InjectionE2ECommand {
                 details: [
                     "hud_style": style.rawValue,
                     "ui_language": language.rawValue,
-                    "badge": strings.liveASRPreviewBadge,
+                    "badge": previewBadge,
                     "preview_chars": "\(previewText.count)"
                 ],
                 surface: snapshot,
@@ -172,7 +174,8 @@ public enum InjectionE2ECommand {
             result["hud_style"] = style.rawValue
             result["ui_language"] = language.rawValue
             result["preview_chars"] = previewText.count
-            result["badge"] = strings.liveASRPreviewBadge
+            result["badge"] = previewBadge
+            result["hold_ms"] = holdMilliseconds
             result["screenshot_captured"] = pngData != nil
             result["gui_artifacts_dir"] = artifactRecorder?.directoryPath as Any? ?? NSNull()
             result["elapsed_ms"] = Int(Date().timeIntervalSince(startedAt) * 1000)

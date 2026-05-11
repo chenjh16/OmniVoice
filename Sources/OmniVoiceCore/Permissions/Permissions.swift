@@ -142,7 +142,7 @@ public enum PermissionGuidePlanner {
             actions.append(.requestInputMonitoring)
             actions.append(.openInputMonitoringSettings)
         }
-        if !snapshot.speechRecognitionGranted && (isManualRequest || requiresSpeechRecognition) {
+        if !snapshot.speechRecognitionGranted {
             actions.append(.requestSpeechRecognition)
         }
         return actions

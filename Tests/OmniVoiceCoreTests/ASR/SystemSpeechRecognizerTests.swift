@@ -50,6 +50,58 @@ struct SystemSpeechRecognizerTests {
     }
 
     @Test
+    func systemASRRuntimeRecoveryPrefersClassicDuringCooldown() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(SystemASRRuntimeRecoveryPlanner.preferredLiveEngine(
+            configured: .speechAnalyzer,
+            now: now,
+            speechAnalyzerCooldownUntil: now.addingTimeInterval(10)
+        ) == .classicSpeech)
+        #expect(SystemASRRuntimeRecoveryPlanner.preferredLiveEngine(
+            configured: .speechAnalyzer,
+            now: now,
+            speechAnalyzerCooldownUntil: now.addingTimeInterval(-1)
+        ) == .speechAnalyzer)
+        #expect(SystemASRRuntimeRecoveryPlanner.preferredLiveEngine(
+            configured: .classicSpeech,
+            now: now,
+            speechAnalyzerCooldownUntil: now.addingTimeInterval(10)
+        ) == .classicSpeech)
+        #expect(SystemASRRuntimeRecoveryPlanner.preferredLiveEngine(
+            configured: .appleOnlineSpeech,
+            now: now,
+            speechAnalyzerCooldownUntil: now.addingTimeInterval(10)
+        ) == .appleOnlineSpeech)
+    }
+
+    @Test
+    func systemASRRuntimeRecoveryCooldownAndProbeRulesAreExplicit() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        #expect(SystemASRRuntimeRecoveryPlanner.cooldownUntil(event: .didWake, now: now) == now.addingTimeInterval(
+            SystemASRRuntimeRecoveryPlanner.wakeCooldownSeconds
+        ))
+        #expect(SystemASRRuntimeRecoveryPlanner.cooldownUntil(event: .screenUnlocked, now: now) == now.addingTimeInterval(
+            SystemASRRuntimeRecoveryPlanner.wakeCooldownSeconds
+        ))
+        #expect(SystemASRRuntimeRecoveryPlanner.cooldownUntil(event: .speechAnalyzerStartFailed, now: now) == now.addingTimeInterval(
+            SystemASRRuntimeRecoveryPlanner.failedStartCooldownSeconds
+        ))
+        #expect(SystemASRRuntimeRecoveryPlanner.cooldownUntil(event: .willSleep, now: now) == nil)
+        #expect(SystemASRRuntimeRecoveryPlanner.shouldScheduleSpeechAnalyzerProbe(
+            configured: .speechAnalyzer,
+            speechAnalyzerAvailable: true
+        ))
+        #expect(!SystemASRRuntimeRecoveryPlanner.shouldScheduleSpeechAnalyzerProbe(
+            configured: .speechAnalyzer,
+            speechAnalyzerAvailable: false
+        ))
+        #expect(!SystemASRRuntimeRecoveryPlanner.shouldScheduleSpeechAnalyzerProbe(
+            configured: .classicSpeech,
+            speechAnalyzerAvailable: true
+        ))
+    }
+
+    @Test
     func systemSpeechRecognitionErrorsExposeSpecificDiagnosticKinds() {
         #expect(SystemSpeechRecognitionError.notAuthorized.diagnosticKind == "speech_not_authorized")
         #expect(SystemSpeechRecognitionError.recognizerUnavailable.diagnosticKind == "speech_recognizer_unavailable")
@@ -68,10 +120,21 @@ struct SystemSpeechRecognizerTests {
         let session = FakeLiveASRSession(result: ASRRecognitionResult(text: "final draft"))
 
         coordinator.prepareForStart()
+        #expect(coordinator.gateState == .notStarted)
         coordinator.beginPreparation(Task {})
+        #expect(coordinator.gateState == .running)
         #expect(coordinator.append(chunk, shouldRun: true) == .buffered)
         #expect(coordinator.install(session, isRecording: true) == .installed(bufferOverflowed: false))
         #expect(session.appendedChunkCount == 1)
+
+        let hiddenPreview = coordinator.acceptPreview(
+            LiveASRUpdate(text: "  hidden evidence  ", isFinal: false),
+            isRecording: true,
+            previewEnabled: false
+        )
+        #expect(hiddenPreview == nil)
+        #expect(coordinator.previewText == "")
+        #expect(coordinator.gateState == .sawText(characterCount: 15))
 
         let preview = coordinator.acceptPreview(
             LiveASRUpdate(text: "  草稿 preview  ", isFinal: false),
@@ -80,12 +143,14 @@ struct SystemSpeechRecognizerTests {
         )
         #expect(preview == "草稿 preview")
         #expect(coordinator.previewText == "草稿 preview")
+        #expect(coordinator.gateState == .sawText(characterCount: 10))
 
         let finalTask = coordinator.makeFinalTask(useForSystemPipeline: true)
         let task = try #require(finalTask)
         let result = try await task.value
         #expect(result.text == "final draft")
         #expect(session.finishCount == 1)
+        #expect(coordinator.gateState == .notStarted)
     }
 
     @MainActor
@@ -98,9 +163,21 @@ struct SystemSpeechRecognizerTests {
         coordinator.prepareForStart()
         coordinator.beginPreparation(Task {})
         #expect(coordinator.append(chunk, shouldRun: true) == .bufferOverflowed(limitSeconds: 0.01))
+        #expect(coordinator.gateState == .bufferOverflowed)
         #expect(coordinator.install(session, isRecording: true) == .installed(bufferOverflowed: true))
         #expect(coordinator.makeFinalTask(useForSystemPipeline: true) == nil)
         #expect(session.cancelCount == 1)
+        #expect(coordinator.gateState == .notStarted)
+    }
+
+    @MainActor
+    @Test
+    func liveASRCoordinatorExposesStartFailureForQualityGate() {
+        let coordinator = LiveASRCoordinator()
+        coordinator.prepareForStart()
+        coordinator.beginPreparation(Task {})
+        coordinator.handleStartFailure(errorKind: "speech_not_authorized")
+        #expect(coordinator.gateState == .startFailed(errorKind: "speech_not_authorized"))
     }
 }
 

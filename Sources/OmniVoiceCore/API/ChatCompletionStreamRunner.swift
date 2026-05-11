@@ -33,13 +33,16 @@ struct ChatCompletionStreamRunner {
     let classifyServerError: (String) -> MimoAPIError
     let mapNetworkError: (Error) -> MimoAPIError
     let makeDiagnostic: (String, Int?, String?, Int, Int, String?, String?, MimoAPIError?) -> RuntimeDiagnostic
+    let validateFinalText: (String) -> MimoAPIError?
     let emit: (RuntimeDiagnostic) -> Void
     let onDelta: @Sendable (String) -> Void
+    let onPhase: @Sendable (TranscriptionRequestPhase) -> Void
 
     func run() async throws -> String {
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
         do {
+            onPhase(.connecting)
             (bytes, response) = try await session.bytes(for: request)
         } catch {
             let mapped = mapNetworkError(error)
@@ -60,6 +63,8 @@ struct ChatCompletionStreamRunner {
             emit(makeDiagnostic(stages.http, http.statusCode, contentType, 0, 0, nil, nil, error))
             throw error
         }
+        onPhase(.responseReceived)
+        onPhase(.waitingForFirstDelta)
 
         var parser = ChatCompletionSSEParser()
         var finalText = ""
@@ -71,6 +76,9 @@ struct ChatCompletionStreamRunner {
         func handle(_ event: SSEStreamEvent) throws {
             switch event {
             case .content(let text):
+                if deltaCharacterCount == 0 {
+                    onPhase(.streaming)
+                }
                 finalText += text
                 deltaCharacterCount += text.count
                 onDelta(text)
@@ -105,6 +113,11 @@ struct ChatCompletionStreamRunner {
                     throw error
                 }
             }
+            if let error = validateFinalText(trimmed) {
+                emit(makeDiagnostic(stages.complete, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, finishReason, nil, error))
+                throw error
+            }
+            onPhase(.completed)
             emit(makeDiagnostic(stages.complete, http.statusCode, contentType, sseChunkCount, deltaCharacterCount, finishReason, nil, nil))
             return trimmed
         }

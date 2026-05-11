@@ -36,8 +36,10 @@ struct MenuPermissionTests {
         #expect(UIStrings(language: .english).displayHints == "Display & Hints")
         #expect(UIStrings(language: .chinese).liveASRPreviewTitle(enabled: true) == "实时 ASR 预览：开")
         #expect(UIStrings(language: .chinese).liveASRPreviewBadge == "草稿")
+        #expect(UIStrings(language: .chinese).liveASRRecognitionBadge == "识别")
         #expect(UIStrings(language: .english).liveASRPreviewBadge == "Draft")
-        #expect(UIStrings(language: .english).tooltip(.liveASRPreview).contains("preview-only"))
+        #expect(UIStrings(language: .english).liveASRRecognitionBadge == "Live")
+        #expect(UIStrings(language: .english).tooltip(.liveASRPreview).contains("local Direct Audio quality checks"))
         #expect(UIStrings(language: .chinese).hudRevealDelayTitle(.milliseconds200) == "HUD 弹出延迟：200ms · 快速（推荐）")
         #expect(UIStrings(language: .english).hudRevealDelayTitle(.milliseconds500) == "HUD Reveal Delay: 500ms · Most Conservative")
         #expect(UIStrings(language: .chinese).configurationTitle(MimoConfig(apiKey: nil, source: .missing)).contains("缺少 API Key"))
@@ -122,6 +124,7 @@ struct MenuPermissionTests {
         #expect(UIStrings(language: .chinese).accessibilityManual.contains("去系统设置"))
         #expect(UIStrings(language: .chinese).accessibilityManual.contains("开启 OmniVoice"))
         #expect(UIStrings(language: .chinese).tooltip(.requestSpeechRecognition).contains("系统弹窗"))
+        #expect(UIStrings(language: .chinese).tooltip(.requestSpeechRecognition).contains("音频直转"))
         let userFacingTooltips = [
             allTooltip,
             UIStrings(language: .chinese).permissionUsageTooltip,
@@ -296,7 +299,7 @@ struct MenuPermissionTests {
             for: missingSpeech,
             hasRunStartupGuide: false,
             isManualRequest: false
-        ) == [])
+        ) == [.requestSpeechRecognition])
         #expect(PermissionGuidePlanner.actions(
             for: missingSpeech,
             hasRunStartupGuide: false,

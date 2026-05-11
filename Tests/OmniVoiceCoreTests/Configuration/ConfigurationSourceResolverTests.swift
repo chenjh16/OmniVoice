@@ -44,6 +44,11 @@ extension ConfigurationTests {
         #expect(chineseTemplate.contains("MiMo E2E Terms"))
         #expect(chineseTemplate.contains("OmniVoice 术语"))
         #expect(chineseTemplate.contains("技术术语"))
+        #expect(chineseTemplate.contains("大模型与模型公司"))
+        #expect(chineseTemplate.contains("Anthropic"))
+        #expect(chineseTemplate.contains("Claude Code"))
+        #expect(chineseTemplate.contains("OpenClaw"))
+        #expect(chineseTemplate.contains("Qwen3.6"))
         #expect(chineseTemplate.contains("HUD"))
         #expect(chineseTemplate.contains("Fn"))
         #expect(chineseTemplate.contains("自定义转写风格"))
@@ -63,6 +68,7 @@ extension ConfigurationTests {
         #expect(englishTemplate.contains(#""enabled_keyword_groups": []"#))
         #expect(!englishTemplate.contains(#"      "mimo_e2e_terms","#))
         #expect(englishTemplate.contains("Technical Terms"))
+        #expect(englishTemplate.contains("LLM Models and Companies"))
 
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("omnivoice-source-name-\(UUID().uuidString)")
@@ -99,7 +105,18 @@ extension ConfigurationTests {
         #expect(hud["reveal_delay_ms"] as? Int == 100)
         #expect(hud["live_asr_preview_enabled"] as? Bool == false)
         let keywordGroups = try #require(object["keyword_groups"] as? [String: Any])
-        #expect(keywordGroups.keys.sorted() == ["mimo_e2e_terms", "omnivoice_terms", "technical_terms"])
+        #expect(keywordGroups.keys.sorted() == ["llm_model_terms", "mimo_e2e_terms", "omnivoice_terms", "technical_terms"])
+        let llmGroup = try #require(keywordGroups["llm_model_terms"] as? [String: Any])
+        #expect(llmGroup["display_name"] as? String == "LLM Models and Companies")
+        let llmKeywords = try #require(llmGroup["keywords"] as? [String])
+        #expect(llmKeywords.count == 34)
+        #expect(llmKeywords.contains("OpenAI"))
+        #expect(llmKeywords.contains("Claude Code"))
+        #expect(llmKeywords.contains("Gemini"))
+        #expect(llmKeywords.contains("Qwen3.6"))
+        #expect(llmKeywords.contains("OpenClaw"))
+        #expect(!llmKeywords.contains("GPT-5.5"))
+        #expect(!llmKeywords.contains("Apple Intelligence"))
     }
 
     @Test

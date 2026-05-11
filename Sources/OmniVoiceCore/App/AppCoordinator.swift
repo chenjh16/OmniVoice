@@ -218,6 +218,10 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     var triggerCaptureTimeout: Timer?
     weak var triggerCaptureView: TriggerCaptureMenuView?
     var triggerCapturePausedListening = false
+    var systemASRRuntimeRecoveryObservers: [NSObjectProtocol] = []
+    var speechAnalyzerRecoveryCooldownUntil: Date?
+    var speechAnalyzerRecoveryProbeTask: Task<Void, Never>?
+    var speechAnalyzerRecoveryGeneration = 0
     var sourceLatencyResults: [String: SourceLatencyMeasurement] = [:]
     var latencyTimer: Timer?
     var automationOptions: RecordingReplayAutomationOptions?
@@ -285,7 +289,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     }
 
     var shouldRunLiveASRForCurrentRecording: Bool {
-        settings.pipelineMode.usesSystemASR || settings.liveASRPreviewEnabled
+        true
     }
 
     var speechAnalyzerAvailable: Bool {
@@ -298,6 +302,14 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         SystemASREngineAvailabilityResolver.effectiveEngine(
             configured: settings.systemASREngine,
             osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        )
+    }
+
+    var effectiveLiveASREngine: SystemASREngine {
+        SystemASRRuntimeRecoveryPlanner.preferredLiveEngine(
+            configured: effectiveSystemASREngine,
+            now: Date(),
+            speechAnalyzerCooldownUntil: speechAnalyzerRecoveryCooldownUntil
         )
     }
 
@@ -578,6 +590,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             enterPermissionBlockedStop(recordDiagnostic: false)
         }
         configureStatusItem()
+        startSystemASRRuntimeRecoveryMonitoring()
         configWatcher.start()
         hud.setVisualStyle(settings.hudVisualStyle)
         actionPanel.setVisualStyle(settings.hudVisualStyle)
@@ -606,6 +619,7 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         latencyTimer?.invalidate()
         latencyTimer = nil
         configWatcher.stop()
+        stopSystemASRRuntimeRecoveryMonitoring()
         stopPermissionReadinessPolling()
         stopPermissionDriftMonitoring()
         let stopWasPending = cancelPendingRecordingStop()

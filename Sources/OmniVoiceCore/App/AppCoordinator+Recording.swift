@@ -46,7 +46,18 @@ extension AppCoordinator {
     func startLiveASRIfNeeded() {
         liveASRCoordinator.prepareForStart()
         guard shouldRunLiveASRForCurrentRecording else { return }
-        let primaryEngine = effectiveSystemASREngine
+        let configuredEngine = effectiveSystemASREngine
+        let primaryEngine = effectiveLiveASREngine
+        if primaryEngine != configuredEngine {
+            recordLocalDiagnostic(
+                stage: "live_asr_recovery_engine_override",
+                details: [
+                    "configured_engine": configuredEngine.rawValue,
+                    "live_engine": primaryEngine.rawValue,
+                    "cooldown_until": iso8601String(speechAnalyzerRecoveryCooldownUntil)
+                ]
+            )
+        }
         let engines = LiveASREngineFallbackPlanner.engines(primary: primaryEngine)
         let keywordHints = currentSystemASRKeywordHintsContext
         let task = Task { [weak self] in
@@ -83,7 +94,7 @@ extension AppCoordinator {
                     if fallbackEngine != nil, !Task.isCancelled {
                         continue
                     }
-                    liveASRCoordinator.handleStartFailure()
+                    liveASRCoordinator.handleStartFailure(errorKind: diagnosticKind(for: error))
                     return
                 }
             }
@@ -105,6 +116,9 @@ extension AppCoordinator {
         ]
         if let fallbackEngine {
             details["fallback_engine"] = fallbackEngine.rawValue
+        }
+        if engine == .speechAnalyzer {
+            markSpeechAnalyzerLiveStartFailedForRecovery()
         }
         recordLocalDiagnostic(
             stage: "live_asr_start_failed",
@@ -160,7 +174,7 @@ extension AppCoordinator {
     }
 
     var liveASRPreviewBadge: String? {
-        settings.pipelineMode == .systemASROnly ? nil : strings.liveASRPreviewBadge
+        settings.pipelineMode == .systemASROnly ? strings.liveASRRecognitionBadge : strings.liveASRPreviewBadge
     }
 
     func makeLiveASRFinalTaskForStoppedRecording(
@@ -511,6 +525,33 @@ extension AppCoordinator {
             ]
         )
 
+        let asrGateState = liveASRCoordinator.gateState
+        let asrGateDecision = DirectAudioASRGatePlanner.decision(
+            mode: context.mode,
+            gateState: asrGateState,
+            overallRMS: result.overallRMS
+        )
+        if case let .block(errorKind) = asrGateDecision {
+            blockDirectAudioForASRGate(
+                result: result,
+                context: context,
+                gateState: asrGateState,
+                errorKind: errorKind
+            )
+            return
+        }
+        if asrGateDecision.reason == "asr_gate_bypassed_strong_rms" {
+            recordLocalDiagnostic(
+                stage: "direct_audio_asr_gate_bypassed",
+                details: directAudioASRGateDiagnosticDetails(
+                    result: result,
+                    context: context,
+                    gateState: asrGateState,
+                    decision: asrGateDecision.reason
+                )
+            )
+        }
+
         let liveASRFinalTask = makeLiveASRFinalTaskForStoppedRecording(
             useForSystemPipeline: context.mode.usesSystemASR
         )
@@ -521,6 +562,63 @@ extension AppCoordinator {
         ) else { return }
         pendingTranscription = pending
         startTranscription(pending)
+    }
+
+    func blockDirectAudioForASRGate(
+        result: AudioRecordingResult,
+        context: RecordingStopContext,
+        gateState: LiveASRCoordinator.GateState,
+        errorKind: String
+    ) {
+        _ = recordingPipeline.failStop()
+        cancelLiveASRSession()
+        state = .idle
+        eventTap.setCancellationActive(false)
+        updateEventTapTriggerSuppression()
+        pendingTranscription = nil
+        recordingFocus = nil
+        automationRecordingResult = nil
+        recordLocalDiagnostic(
+            stage: "direct_audio_asr_gate_blocked",
+            errorKind: errorKind,
+            details: directAudioASRGateDiagnosticDetails(
+                result: result,
+                context: context,
+                gateState: gateState,
+                decision: errorKind
+            )
+        )
+        hud.showWarningStatus(strings.noReliableSpeechRecognized, duration: warningDuration)
+        rebuildMenu()
+        completeAutomation(
+            ok: false,
+            pending: nil,
+            injectionResult: nil,
+            fallbackReason: errorKind,
+            errorKind: errorKind
+        )
+        applyPendingConfigHotReloadIfNeeded()
+    }
+
+    func directAudioASRGateDiagnosticDetails(
+        result: AudioRecordingResult,
+        context: RecordingStopContext,
+        gateState: LiveASRCoordinator.GateState,
+        decision: String
+    ) -> [String: String] {
+        var details = [
+            "recording_seconds": String(format: "%.3f", result.durationSeconds),
+            "rms": String(format: "%.5f", result.overallRMS),
+            "pipeline_mode": context.mode.rawValue,
+            "asr_gate_state": gateState.diagnosticValue,
+            "asr_gate_decision": decision,
+            "live_engine": effectiveLiveASREngine.rawValue,
+            "asr_text_chars": "\(gateState.textCharacterCount)"
+        ]
+        if case let .startFailed(errorKind) = gateState {
+            details["asr_gate_error"] = errorKind
+        }
+        return details
     }
 
     func failRecordingStop(

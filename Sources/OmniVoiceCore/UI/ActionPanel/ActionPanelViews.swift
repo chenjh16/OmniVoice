@@ -64,6 +64,7 @@ final class ActionPanelBackgroundView: NSView {
     }
 
     private var nativeGlassView: NSView?
+    private var nativeGlassScrimView: GlassScrimView?
     var onEffectiveAppearanceChanged: (() -> Void)?
     var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal) {
         didSet {
@@ -113,19 +114,18 @@ final class ActionPanelBackgroundView: NSView {
         }
         if let fillColors {
             NSGradient(colors: fillColors)?.draw(in: path, angle: -90)
-        } else if surface == .nativeGlass {
-            color(forScrimTone: glassReadability.scrimTone, alpha: glassReadability.scrimAlpha).setFill()
-            path.fill()
         }
 
-        let innerPath = NSBezierPath(
-            roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5),
-            xRadius: max(0, radius - 1.5),
-            yRadius: max(0, radius - 1.5)
-        )
-        NSColor.white.withAlphaComponent(statusTone == .warning ? 0.055 : 0.045).setStroke()
-        innerPath.lineWidth = 0.7
-        innerPath.stroke()
+        if surface != .nativeGlass {
+            let innerPath = NSBezierPath(
+                roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5),
+                xRadius: max(0, radius - 1.5),
+                yRadius: max(0, radius - 1.5)
+            )
+            NSColor.white.withAlphaComponent(statusTone == .warning ? 0.055 : 0.045).setStroke()
+            innerPath.lineWidth = 0.7
+            innerPath.stroke()
+        }
 
         let strokeColor: NSColor = switch surface {
         case .darkCapsule:
@@ -138,7 +138,7 @@ final class ActionPanelBackgroundView: NSView {
                 : NSColor.black.withAlphaComponent(statusTone == .warning ? 0.24 : 0.14)
         }
         strokeColor.setStroke()
-        path.lineWidth = 0.9
+        path.lineWidth = surface == .nativeGlass ? 0.8 : 0.9
         path.stroke()
     }
 
@@ -153,39 +153,45 @@ final class ActionPanelBackgroundView: NSView {
     }
 
     private func updateNativeGlassAppearance() {
-        guard #available(macOS 26.0, *),
-              let glass = nativeGlassView as? NSGlassEffectView else {
+        guard #available(macOS 26.0, *) else {
             return
         }
-        glass.tintColor = statusTone == .warning
-            ? NSColor(calibratedRed: 1.0, green: 0.62, blue: 0.34, alpha: glassReadability.tintAlpha)
-            : NSColor(calibratedRed: 0.50, green: 0.66, blue: 0.88, alpha: glassReadability.tintAlpha)
+        if let glass = nativeGlassView as? NSGlassEffectView {
+            glass.style = .regular
+            glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: statusTone, readability: glassReadability)
+            glass.alphaValue = 1
+        } else if let effect = nativeGlassView as? NSVisualEffectView {
+            effect.alphaValue = glassReadability.materialAlpha
+            effect.appearance = NSAppearance(named: .darkAqua)
+        }
+        applyLiquidGlassOverlay(to: nativeGlassScrimView)
     }
 
     private func updateNativeGlassCornerRadius() {
-        guard #available(macOS 26.0, *),
-              let glass = nativeGlassView as? NSGlassEffectView else {
-            return
+        if #available(macOS 26.0, *),
+           let glass = nativeGlassView as? NSGlassEffectView {
+            glass.cornerRadius = cornerRadius
+        } else if let effect = nativeGlassView as? NSVisualEffectView {
+            effect.layer?.cornerRadius = cornerRadius
         }
-        glass.cornerRadius = cornerRadius
+        nativeGlassScrimView?.cornerRadius = cornerRadius
     }
 
     private func configureNativeGlassIfNeeded() {
         nativeGlassView?.removeFromSuperview()
         nativeGlassView = nil
+        nativeGlassScrimView?.removeFromSuperview()
+        nativeGlassScrimView = nil
         guard surface == .nativeGlass,
               #available(macOS 26.0, *) else {
             return
         }
         let glass = NSGlassEffectView(frame: bounds)
         glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.wantsLayer = true
         glass.cornerRadius = cornerRadius
-        glass.style = .clear
-        glass.tintColor = statusTone == .warning
-            ? NSColor(calibratedRed: 1.0, green: 0.62, blue: 0.34, alpha: glassReadability.tintAlpha)
-            : NSColor(calibratedRed: 0.50, green: 0.66, blue: 0.88, alpha: glassReadability.tintAlpha)
-        glass.clipsToBounds = true
+        glass.style = .regular
+        glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: statusTone, readability: glassReadability)
+        glass.alphaValue = 1
         addSubview(glass, positioned: .below, relativeTo: nil)
         NSLayoutConstraint.activate([
             glass.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -193,7 +199,27 @@ final class ActionPanelBackgroundView: NSView {
             glass.topAnchor.constraint(equalTo: topAnchor),
             glass.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+        let scrim = GlassScrimView()
+        scrim.translatesAutoresizingMaskIntoConstraints = false
+        scrim.cornerRadius = cornerRadius
+        applyLiquidGlassOverlay(to: scrim)
+        addSubview(scrim, positioned: .above, relativeTo: glass)
+        NSLayoutConstraint.activate([
+            scrim.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrim.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrim.topAnchor.constraint(equalTo: topAnchor),
+            scrim.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
         nativeGlassView = glass
+        nativeGlassScrimView = scrim
+    }
+
+    private func applyLiquidGlassOverlay(to scrim: GlassScrimView?) {
+        guard let scrim else { return }
+        scrim.color = NativeGlassSurfaceStyle.overlayColor(status: statusTone, readability: glassReadability)
+        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha
+        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha
+        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: statusTone)
     }
 }
 
@@ -224,6 +250,14 @@ final class ThemedPanelButton: NSButton {
     }
 
     var glassTextTone: HUDTextTone = .dark {
+        didSet { needsDisplay = true }
+    }
+
+    var glassTextHaloColor: NSColor? {
+        didSet { needsDisplay = true }
+    }
+
+    var glassTextHaloWidth: CGFloat = 0 {
         didSet { needsDisplay = true }
     }
 
@@ -288,10 +322,12 @@ final class ThemedPanelButton: NSButton {
             y: visualTextOriginY(textHeight: size.height)
         )
         let titleRect = NSRect(x: point.x, y: point.y, width: titleWidth, height: size.height + 2)
-        (title as NSString).draw(
-            with: titleRect,
+        GlassTextReadabilityRenderer.draw(
+            NSAttributedString(string: title, attributes: attributes),
+            in: titleRect,
             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-            attributes: attributes
+            haloColor: glassTextHaloColor,
+            haloWidth: glassTextHaloWidth
         )
         var trailingX = titleRect.maxX
         if let shortcut {
@@ -314,10 +350,12 @@ final class ThemedPanelButton: NSButton {
                 width: max(1, pillRect.width - 4),
                 height: shortcutSize.height + 2
             )
-            (shortcut as NSString).draw(
-                with: shortcutRect,
+            GlassTextReadabilityRenderer.draw(
+                NSAttributedString(string: shortcut, attributes: shortcutAttributes),
+                in: shortcutRect,
                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                attributes: shortcutAttributes
+                haloColor: glassTextHaloColor?.withAlphaComponent(0.78),
+                haloWidth: glassTextHaloWidth * 0.78
             )
             trailingX = pillRect.maxX
         }
