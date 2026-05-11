@@ -66,7 +66,7 @@ final class ActionPanelBackgroundView: NSView {
     private var nativeGlassView: NSView?
     private var nativeGlassScrimView: GlassScrimView?
     var onEffectiveAppearanceChanged: (() -> Void)?
-    var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal) {
+    var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal, role: .actionPanel) {
         didSet {
             updateNativeGlassAppearance()
             needsDisplay = true
@@ -157,7 +157,7 @@ final class ActionPanelBackgroundView: NSView {
             return
         }
         if let glass = nativeGlassView as? NSGlassEffectView {
-            glass.style = .regular
+            glass.style = NativeGlassSurfaceStyle.glassStyle(role: .actionPanel, status: statusTone)
             glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: statusTone, readability: glassReadability)
             glass.alphaValue = 1
         } else if let effect = nativeGlassView as? NSVisualEffectView {
@@ -189,7 +189,7 @@ final class ActionPanelBackgroundView: NSView {
         let glass = NSGlassEffectView(frame: bounds)
         glass.translatesAutoresizingMaskIntoConstraints = false
         glass.cornerRadius = cornerRadius
-        glass.style = .regular
+        glass.style = NativeGlassSurfaceStyle.glassStyle(role: .actionPanel, status: statusTone)
         glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: statusTone, readability: glassReadability)
         glass.alphaValue = 1
         addSubview(glass, positioned: .below, relativeTo: nil)
@@ -217,9 +217,9 @@ final class ActionPanelBackgroundView: NSView {
     private func applyLiquidGlassOverlay(to scrim: GlassScrimView?) {
         guard let scrim else { return }
         scrim.color = NativeGlassSurfaceStyle.overlayColor(status: statusTone, readability: glassReadability)
-        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha
-        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha
-        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: statusTone)
+        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha(role: .actionPanel, status: statusTone)
+        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha(role: .actionPanel, status: statusTone)
+        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: statusTone, role: .actionPanel)
     }
 }
 
@@ -397,8 +397,8 @@ final class ThemedPanelButton: NSButton {
                 )
             case .secondary:
                 return (
-                    text.withAlphaComponent(isHighlighted ? 0.16 : 0.09),
-                    text.withAlphaComponent(0.14),
+                    NSColor.black.withAlphaComponent(isHighlighted ? 0.20 : 0.13),
+                    NSColor.white.withAlphaComponent(0.22),
                     text.withAlphaComponent(0.94)
                 )
             }

@@ -296,7 +296,7 @@ make run SIGN_IDENTITY="OmniVoice Local Development"
 - Secure text field、密码、验证码、token/API-key-like 输入框、无焦点、缺权限、粘贴失败和关闭自动插入都会进入置顶 ActionPanel。
 - 如果有效本地录音后的转写失败，OmniVoice 会把 WAV 保留在内存中，并提供重试/取消，不要求你重新说一遍。
 - 模型转写阶段的细进度条会跟随 OpenAI-compatible streaming 请求阶段变化：准备和连接阶段先使用较短上限，收到 HTTP 响应和等待首个 delta 时继续推进，首个流式文本到达后切换到更稳定的流式状态颜色，并且只在完成事件后到 100%。
-- `HUD 样式` 在 macOS 14/15 上支持 Automatic、Dark Capsule 和 Light Capsule。Automatic 会跟随系统亮暗外观：浅色系统使用浅色胶囊，深色系统使用深色胶囊。Liquid Glass 只会在 macOS 26+ 且系统原生 glass view 可用时显示；HUD 和 ActionPanel 会共用原生玻璃、圆角外部深度和外描边文字光晕，避免亮背景下文字被描边吃细。
+- `HUD 样式` 在 macOS 14/15 上支持 Automatic、Dark Capsule 和 Light Capsule。Automatic 会跟随系统亮暗外观：浅色系统使用浅色胶囊，深色系统使用深色胶囊。Liquid Glass 只会在 macOS 26+ 且系统原生 glass view 可用时显示；HUD 和 ActionPanel 会共用原生玻璃与圆角外部深度。ActionPanel 的 Liquid Glass 额外保留中性对比层和更深的玻璃子控件，避免白色或复杂背景下文字失去可读性；文字可读性通过正常字形背后的外描边光晕增强，不使用会把文字本体吃细的负值描边。
 - `提示显示时长` 控制短状态或 warning 提示显示多久。
 - `HUD 弹出延迟` 只影响 HUD 何时出现，不影响录音开始时间；组合快捷键会在 HUD 出现前静默取消。
 - 录音波形使用实时 RMS：安静环境下低幅慢速运动，说话 attack 和近期音节会更快影响速度和振幅。
@@ -644,7 +644,7 @@ Direct Audio mode defaults to `mimo-v2.5`, with `mimo-v2-omni` and third-party A
 - Secure text fields, passwords, verification codes, token/API-key-like fields, missing focus, missing permissions, paste failures, and disabled Auto Insert all use the topmost ActionPanel.
 - If transcription fails after a valid local recording, OmniVoice keeps the WAV in memory and offers Retry/Cancel without requiring you to speak again.
 - During model-backed transcription, the thin progress bar follows the OpenAI-compatible streaming request phase: preparation and connection start with lower caps, HTTP response and first-delta waiting advance the bar, the first streamed text chunk switches to a steadier streaming color, and 100% appears only after completion.
-- `HUD Style` supports Automatic, Dark Capsule, and Light Capsule on macOS 14/15. Automatic follows the system appearance: light mode uses the light capsule, and dark mode uses the dark capsule. Liquid Glass appears only on macOS 26+ when the native glass view is available; HUD and ActionPanel share native glass, rounded external depth, and an outer text halo so bright backgrounds do not thin the glyph body.
+- `HUD Style` supports Automatic, Dark Capsule, and Light Capsule on macOS 14/15. Automatic follows the system appearance: light mode uses the light capsule, and dark mode uses the dark capsule. Liquid Glass appears only on macOS 26+ when the native glass view is available; HUD and ActionPanel share native glass and rounded external depth. ActionPanel Liquid Glass keeps a neutral contrast layer and darker glass subcontrols so text remains readable on white or visually busy backgrounds; text readability is enhanced with an outer halo behind normal filled glyphs, not with negative strokes that thin the glyph body.
 - `Message Duration` controls how long short status or warning messages remain visible.
 - `HUD Reveal Delay` only controls when the HUD appears, not when recording starts; trigger-key combinations cancel silently before the HUD appears.
 - Recording waveform uses live RMS: quiet rooms get slower low-amplitude motion, while speech attacks and recent syllables quickly affect speed and amplitude.

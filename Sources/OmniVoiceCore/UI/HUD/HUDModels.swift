@@ -184,13 +184,32 @@ public struct GlassReadabilityStyle: Equatable, Sendable {
     public let warning: Bool
 }
 
+public enum GlassSurfaceRole: Equatable, Sendable {
+    case hud
+    case actionPanel
+}
+
 public enum GlassReadabilityResolver {
     public static func resolve(
         appearance: GlassBackgroundAppearance,
-        status: HUDStatusTone
+        status: HUDStatusTone,
+        role: GlassSurfaceRole = .hud
     ) -> GlassReadabilityStyle {
         switch status {
         case .normal:
+            if role == .actionPanel {
+                return GlassReadabilityStyle(
+                    textTone: .light,
+                    scrimTone: .dark,
+                    scrimAlpha: appearance == .light ? 0.28 : 0.18,
+                    tintAlpha: appearance == .light ? 0.12 : 0.07,
+                    materialAlpha: 1,
+                    shadowAlpha: 0.18,
+                    haloAlpha: 0.38,
+                    haloWidth: 4.1,
+                    warning: false
+                )
+            }
             return GlassReadabilityStyle(
                 textTone: .light,
                 scrimTone: .dark,
@@ -203,6 +222,19 @@ public enum GlassReadabilityResolver {
                 warning: false
             )
         case .warning:
+            if role == .actionPanel {
+                return GlassReadabilityStyle(
+                    textTone: .light,
+                    scrimTone: .dark,
+                    scrimAlpha: 0.080,
+                    tintAlpha: 0.11,
+                    materialAlpha: 1,
+                    shadowAlpha: 0.15,
+                    haloAlpha: 0.31,
+                    haloWidth: 3.65,
+                    warning: true
+                )
+            }
             return GlassReadabilityStyle(
                 textTone: .light,
                 scrimTone: .dark,

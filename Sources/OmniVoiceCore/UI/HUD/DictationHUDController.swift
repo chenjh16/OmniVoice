@@ -477,7 +477,8 @@ public final class DictationHUDController {
         if capsuleView.surface == .nativeGlass {
             let readability = GlassReadabilityResolver.resolve(
                 appearance: glassAppearance(for: capsuleView.effectiveAppearance),
-                status: tone
+                status: tone,
+                role: .hud
             )
             capsuleView.glassReadability = readability
             applyTextTone(

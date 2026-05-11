@@ -50,6 +50,7 @@ enum NativeGlassSurfaceStyle {
     static func tintColor(status: HUDStatusTone, readability: GlassReadabilityStyle) -> NSColor? {
         switch status {
         case .normal:
+            guard readability.tintAlpha > 0 else { return nil }
             return NSColor(calibratedWhite: 0.0, alpha: readability.tintAlpha)
         case .warning:
             return NSColor(calibratedRed: 1.0, green: 0.56, blue: 0.20, alpha: readability.tintAlpha)
@@ -67,6 +68,38 @@ enum NativeGlassSurfaceStyle {
 
     static func innerRimAlpha(status: HUDStatusTone) -> CGFloat {
         status == .warning ? 0.24 : 0.18
+    }
+
+    static func topSheenAlpha(role: GlassSurfaceRole, status: HUDStatusTone) -> CGFloat {
+        switch role {
+        case .hud:
+            return topSheenAlpha
+        case .actionPanel:
+            return topSheenAlpha
+        }
+    }
+
+    static func bottomShadeAlpha(role: GlassSurfaceRole, status: HUDStatusTone) -> CGFloat {
+        switch role {
+        case .hud:
+            return bottomShadeAlpha
+        case .actionPanel:
+            return bottomShadeAlpha
+        }
+    }
+
+    static func innerRimAlpha(status: HUDStatusTone, role: GlassSurfaceRole) -> CGFloat {
+        switch role {
+        case .hud:
+            return innerRimAlpha(status: status)
+        case .actionPanel:
+            return status == .warning ? 0.32 : 0.28
+        }
+    }
+
+    @available(macOS 26.0, *)
+    static func glassStyle(role: GlassSurfaceRole, status: HUDStatusTone) -> NSGlassEffectView.Style {
+        .regular
     }
 }
 

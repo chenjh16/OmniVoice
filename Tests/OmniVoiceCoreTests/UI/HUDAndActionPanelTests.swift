@@ -229,6 +229,21 @@ struct HUDAndActionPanelTests {
         let lightGlass = GlassReadabilityResolver.resolve(appearance: .light, status: .normal)
         let darkGlass = GlassReadabilityResolver.resolve(appearance: .dark, status: .normal)
         let warningGlass = GlassReadabilityResolver.resolve(appearance: .dark, status: .warning)
+        let panelLightGlass = GlassReadabilityResolver.resolve(
+            appearance: .light,
+            status: .normal,
+            role: .actionPanel
+        )
+        let panelDarkGlass = GlassReadabilityResolver.resolve(
+            appearance: .dark,
+            status: .normal,
+            role: .actionPanel
+        )
+        let panelWarningGlass = GlassReadabilityResolver.resolve(
+            appearance: .dark,
+            status: .warning,
+            role: .actionPanel
+        )
         #expect(lightGlass.textTone == .light)
         #expect(lightGlass.scrimTone == .dark)
         #expect(lightGlass.scrimAlpha > 0.12)
@@ -254,6 +269,14 @@ struct HUDAndActionPanelTests {
         #expect(warningGlass.materialAlpha == 1)
         #expect(warningGlass.haloAlpha > darkGlass.haloAlpha)
         #expect(warningGlass.textTone == .light)
+        #expect(panelLightGlass.textTone == .light)
+        #expect(panelLightGlass.scrimAlpha > lightGlass.scrimAlpha)
+        #expect(panelLightGlass.tintAlpha < lightGlass.tintAlpha)
+        #expect(panelDarkGlass.scrimAlpha > darkGlass.scrimAlpha)
+        #expect(panelDarkGlass.tintAlpha < darkGlass.tintAlpha)
+        #expect(panelLightGlass.haloAlpha > lightGlass.haloAlpha)
+        #expect(panelWarningGlass.scrimAlpha < warningGlass.scrimAlpha)
+        #expect(panelWarningGlass.tintAlpha < warningGlass.tintAlpha)
         let text = NSAttributedString(
             string: "Liquid Glass",
             attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.white]
@@ -270,6 +293,19 @@ struct HUDAndActionPanelTests {
         #expect(NativeGlassSurfaceStyle.bottomShadeAlpha == 0)
         #expect(NativeGlassSurfaceStyle.innerRimAlpha(status: .normal) == 0.18)
         #expect(NativeGlassSurfaceStyle.innerRimAlpha(status: .warning) == 0.24)
+        #expect(NativeGlassSurfaceStyle.topSheenAlpha(role: .hud, status: .normal) == 0)
+        #expect(NativeGlassSurfaceStyle.bottomShadeAlpha(role: .hud, status: .normal) == 0)
+        #expect(NativeGlassSurfaceStyle.topSheenAlpha(role: .actionPanel, status: .normal) == 0)
+        #expect(NativeGlassSurfaceStyle.bottomShadeAlpha(role: .actionPanel, status: .normal) == 0)
+        if #available(macOS 26.0, *) {
+            #expect(NativeGlassSurfaceStyle.glassStyle(role: .actionPanel, status: .normal) == .regular)
+            #expect(NativeGlassSurfaceStyle.glassStyle(role: .actionPanel, status: .warning) == .regular)
+            #expect(NativeGlassSurfaceStyle.glassStyle(role: .hud, status: .normal) == .regular)
+        }
+        #expect(
+            NativeGlassSurfaceStyle.innerRimAlpha(status: .normal, role: .actionPanel)
+                > NativeGlassSurfaceStyle.innerRimAlpha(status: .normal, role: .hud)
+        )
         #expect(NativeGlassSurfaceStyle.overlayColor(status: .normal, readability: lightGlass).alphaComponent == lightGlass.scrimAlpha)
         #expect(NativeGlassSurfaceStyle.overlayColor(status: .warning, readability: warningGlass).alphaComponent == warningGlass.scrimAlpha)
         #expect(

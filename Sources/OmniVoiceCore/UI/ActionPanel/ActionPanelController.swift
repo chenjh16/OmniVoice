@@ -312,7 +312,8 @@ public final class ActionPanelController {
         if surface == .nativeGlass, let backgroundView {
             let readability = GlassReadabilityResolver.resolve(
                 appearance: glassAppearance(for: backgroundView.effectiveAppearance),
-                status: status
+                status: status,
+                role: .actionPanel
             )
             backgroundView.glassReadability = readability
             textTone = readability.textTone
@@ -333,7 +334,8 @@ public final class ActionPanelController {
             let readability = backgroundView.map {
                 GlassReadabilityResolver.resolve(
                     appearance: glassAppearance(for: $0.effectiveAppearance),
-                    status: status
+                    status: status,
+                    role: .actionPanel
                 )
             }
             titleLabel?.textHaloColor = textHaloColor(for: textTone, alpha: readability?.haloAlpha ?? 0)
@@ -355,7 +357,8 @@ public final class ActionPanelController {
             if surface == .nativeGlass, let backgroundView {
                 let readability = GlassReadabilityResolver.resolve(
                     appearance: glassAppearance(for: backgroundView.effectiveAppearance),
-                    status: status
+                    status: status,
+                    role: .actionPanel
                 )
                 button?.glassTextHaloColor = textHaloColor(
                     for: textTone,

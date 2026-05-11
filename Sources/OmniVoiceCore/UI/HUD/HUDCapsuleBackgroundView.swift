@@ -27,7 +27,7 @@ final class CapsuleBackgroundView: NSView {
     private var nativeGlassView: NSView?
     private var nativeGlassScrimView: GlassScrimView?
     var onEffectiveAppearanceChanged: (() -> Void)?
-    var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal) {
+    var glassReadability = GlassReadabilityResolver.resolve(appearance: .light, status: .normal, role: .hud) {
         didSet {
             updateNativeGlassAppearance()
             needsDisplay = true
@@ -102,7 +102,7 @@ final class CapsuleBackgroundView: NSView {
             return
         }
         if let glass = nativeGlassView as? NSGlassEffectView {
-            glass.style = .regular
+            glass.style = NativeGlassSurfaceStyle.glassStyle(role: .hud, status: nativeGlassStatusTone)
             glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: nativeGlassStatusTone, readability: glassReadability)
             glass.alphaValue = 1
         } else if let effect = nativeGlassView as? NSVisualEffectView {
@@ -135,7 +135,7 @@ final class CapsuleBackgroundView: NSView {
         let glass = NSGlassEffectView(frame: bounds)
         glass.translatesAutoresizingMaskIntoConstraints = false
         glass.cornerRadius = currentCornerRadius
-        glass.style = .regular
+        glass.style = NativeGlassSurfaceStyle.glassStyle(role: .hud, status: nativeGlassStatusTone)
         glass.tintColor = NativeGlassSurfaceStyle.tintColor(status: nativeGlassStatusTone, readability: glassReadability)
         glass.alphaValue = 1
         addSubview(glass, positioned: .below, relativeTo: nil)
@@ -165,9 +165,9 @@ final class CapsuleBackgroundView: NSView {
         guard let scrim else { return }
         let status = nativeGlassStatusTone
         scrim.color = NativeGlassSurfaceStyle.overlayColor(status: status, readability: glassReadability)
-        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha
-        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha
-        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: status)
+        scrim.topSheenAlpha = NativeGlassSurfaceStyle.topSheenAlpha(role: .hud, status: status)
+        scrim.bottomShadeAlpha = NativeGlassSurfaceStyle.bottomShadeAlpha(role: .hud, status: status)
+        scrim.innerRimAlpha = NativeGlassSurfaceStyle.innerRimAlpha(status: status, role: .hud)
     }
 
     private var nativeGlassStatusTone: HUDStatusTone {
