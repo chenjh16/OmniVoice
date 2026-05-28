@@ -198,6 +198,10 @@ extension ConfigLoader {
             issues.append("system_asr")
             return issues
         }
+        if hasInvalidExternalASRFields(systemASR[ConfigSchema.SystemASR.externalASR]) {
+            issues.append("system_asr")
+            return issues
+        }
         if containsDeprecatedCustomMetadata(object[ConfigSchema.Root.customStyles] as? [String: Any]) {
             issues.append("custom_styles_deprecated")
         }
@@ -260,6 +264,15 @@ extension ConfigLoader {
             return false
         }
         return textLLM[ConfigSchema.Models.extraModels] != nil
+    }
+
+    func hasInvalidExternalASRFields(_ value: Any?) -> Bool {
+        guard let value else { return false }
+        guard let object = value as? [String: Any] else { return true }
+        guard let providerID = object[ConfigSchema.ExternalASR.providerID] else { return false }
+        guard let raw = providerID as? String else { return true }
+        guard let sanitized = raw.nilIfBlank else { return false }
+        return !ExternalASRSettings.isValidProviderID(sanitized)
     }
 
     func hasInvalidPreferenceFields(_ object: [String: Any]?) -> Bool {

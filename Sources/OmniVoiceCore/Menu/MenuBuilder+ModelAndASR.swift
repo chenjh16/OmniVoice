@@ -49,7 +49,10 @@ extension MenuBuilder {
     func systemASRMenu() -> NSMenu {
         let menu = NSMenu(title: coordinator.strings.systemASR)
         menu.addItem(submenuItem(
-            coordinator.strings.systemASREngineTitle(coordinator.effectiveSystemASREngine),
+            coordinator.strings.systemASREngineTitle(
+                coordinator.effectiveSystemASREngine,
+                externalProviderName: coordinator.selectedExternalASRPlugin?.displayName
+            ),
             submenu: systemASREngineMenu(),
             tooltip: coordinator.strings.tooltip(.systemASREngine)
         ))
@@ -65,19 +68,56 @@ extension MenuBuilder {
 
     func systemASREngineMenu() -> NSMenu {
         let menu = NSMenu(title: coordinator.strings.systemASREngine)
-        for engine in SystemASREngine.allCases {
-            let menuItem = item(
-                title: engine.displayName(in: coordinator.settings.uiLanguage),
-                action: #selector(AppCoordinator.selectSystemASREngine(_:)),
-                tooltip: coordinator.strings.systemASREngineTooltip(engine)
-            )
-            menuItem.representedObject = engine.rawValue
-            menuItem.state = engine == coordinator.effectiveSystemASREngine ? .on : .off
-            if engine == .speechAnalyzer && !coordinator.speechAnalyzerAvailable {
-                menuItem.isEnabled = false
+        let entries = SystemASREngineMenuPlanner.entries(
+            installedPlugins: coordinator.externalASRPlugins,
+            selectedEngine: coordinator.effectiveSystemASREngine,
+            selectedExternalProviderID: coordinator.settings.externalASRProviderID,
+            speechAnalyzerAvailable: coordinator.speechAnalyzerAvailable,
+            uiLanguage: coordinator.settings.uiLanguage
+        )
+        var didAddPluginSeparator = false
+        for entry in entries {
+            if case .externalASRProvider = entry.selection, !didAddPluginSeparator {
+                menu.addItem(NSMenuItem.separator())
+                didAddPluginSeparator = true
             }
+            let menuItem = item(
+                title: entry.title,
+                action: action(for: entry.selection),
+                tooltip: tooltip(for: entry.selection)
+            )
+            menuItem.representedObject = representedObject(for: entry.selection)
+            menuItem.state = entry.isSelected ? .on : .off
+            menuItem.isEnabled = entry.isEnabled
             menu.addItem(menuItem)
         }
         return menu
+    }
+
+    private func action(for selection: SystemASREngineMenuEntry.Selection) -> Selector {
+        switch selection {
+        case .builtIn:
+            return #selector(AppCoordinator.selectSystemASREngine(_:))
+        case .externalASRProvider:
+            return #selector(AppCoordinator.selectExternalASRProvider(_:))
+        }
+    }
+
+    private func representedObject(for selection: SystemASREngineMenuEntry.Selection) -> Any {
+        switch selection {
+        case .builtIn(let engine):
+            return engine.rawValue
+        case .externalASRProvider(let id):
+            return ExternalASRProviderMenuSelection(providerID: id)
+        }
+    }
+
+    private func tooltip(for selection: SystemASREngineMenuEntry.Selection) -> String {
+        switch selection {
+        case .builtIn(let engine):
+            return coordinator.strings.systemASREngineTooltip(engine)
+        case .externalASRProvider:
+            return coordinator.strings.systemASREngineTooltip(.externalASR)
+        }
     }
 }

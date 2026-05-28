@@ -134,7 +134,8 @@ extension AppCoordinator {
             options: SystemSpeechRecognitionOptions(
                 language: .defaultLanguage,
                 engine: effectiveSystemASREngine,
-                keywordHints: currentSystemASRKeywordHintsContext
+                keywordHints: currentSystemASRKeywordHintsContext,
+                externalASRPlugin: selectedExternalASRPlugin
             )
         )
         recordLocalDiagnostic(

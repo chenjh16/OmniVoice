@@ -44,8 +44,12 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
         let text = Self.displayText(update.text)
         guard !text.isEmpty else { return nil }
 
-        acceptDisplayText(text)
-        acceptResolvedText(text)
+        if update.replacesCurrentSegment {
+            replaceCurrentSegment(with: text)
+        } else {
+            acceptDisplayText(text)
+            acceptResolvedText(text)
+        }
         if update.isFinal {
             commitDisplayWorkingSegment()
             commitResolvedWorkingSegment()
@@ -68,6 +72,17 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
 
     static func displayText(_ text: String) -> String {
         HUDLivePreviewPresentationPlanner.displayText(from: text)
+    }
+
+    private mutating func replaceCurrentSegment(with text: String) {
+        let displayCandidate = candidateWithoutCommittedPrefix(text, committedSegments: committedDisplaySegments)
+        if !displayCandidate.isEmpty {
+            displayWorkingSegment = displayCandidate
+        }
+        let resolvedCandidate = candidateWithoutCommittedPrefix(text, committedSegments: committedResolvedSegments)
+        if !resolvedCandidate.isEmpty {
+            resolvedWorkingSegment = resolvedCandidate
+        }
     }
 
     private mutating func acceptDisplayText(_ text: String) {

@@ -4,6 +4,7 @@ import Foundation
 extension AppCoordinator {
     func menuWillOpen(_ menu: NSMenu) {
         handlePermissionReadiness(PermissionChecker.snapshot())
+        reloadExternalASRPlugins()
         rebuildMenu()
     }
 
@@ -62,6 +63,10 @@ extension AppCoordinator {
         menuActionRouter.selectSystemASREngine(sender)
     }
 
+    @objc func selectExternalASRProvider(_ sender: NSMenuItem) {
+        menuActionRouter.selectExternalASRProvider(sender)
+    }
+
     @objc func toggleSystemASRKeywordHints() {
         menuActionRouter.toggleSystemASRKeywordHints()
     }
@@ -78,7 +83,8 @@ extension AppCoordinator {
             pipelineMode: settings.pipelineMode,
             systemASRSettings: SystemASRSettings(
                 engine: settings.systemASREngine,
-                keywordHintsEnabled: settings.systemASRKeywordHintsEnabled
+                keywordHintsEnabled: settings.systemASRKeywordHintsEnabled,
+                externalASR: ExternalASRSettings(providerID: settings.externalASRProviderID)
             ),
             activeSourceID: activeSourceID,
             uiLanguage: settings.uiLanguage

@@ -4,17 +4,25 @@ public enum SystemASREngine: String, CaseIterable, Codable, Sendable {
     case speechAnalyzer = "speech_analyzer"
     case classicSpeech = "classic_speech"
     case appleOnlineSpeech = "apple_online_speech"
+    case externalASR = "external_asr"
 
     public static let defaultEngine: SystemASREngine = .speechAnalyzer
+    public static let builtInMenuCases: [SystemASREngine] = [
+        .speechAnalyzer,
+        .classicSpeech,
+        .appleOnlineSpeech
+    ]
 
     public func displayName(in uiLanguage: UILanguage) -> String {
         switch (uiLanguage, self) {
         case (.chinese, .speechAnalyzer): return "SpeechAnalyzer"
         case (.chinese, .classicSpeech): return "经典 Speech"
         case (.chinese, .appleOnlineSpeech): return "Apple 在线识别"
+        case (.chinese, .externalASR): return "外部 ASR"
         case (.english, .speechAnalyzer): return "SpeechAnalyzer"
         case (.english, .classicSpeech): return "Classic Speech"
         case (.english, .appleOnlineSpeech): return "Apple Online Speech"
+        case (.english, .externalASR): return "External ASR"
         }
     }
 }
@@ -41,7 +49,7 @@ public enum LiveASREngineFallbackPlanner {
         switch primary {
         case .speechAnalyzer:
             return [.speechAnalyzer, .classicSpeech]
-        case .classicSpeech, .appleOnlineSpeech:
+        case .classicSpeech, .appleOnlineSpeech, .externalASR:
             return [primary]
         }
     }
@@ -101,13 +109,16 @@ public enum SystemASRRuntimeRecoveryPlanner {
 public struct SystemASRSettings: Equatable, Sendable {
     public let engine: SystemASREngine
     public let keywordHintsEnabled: Bool
+    public let externalASR: ExternalASRSettings
 
     public init(
         engine: SystemASREngine = .defaultEngine,
-        keywordHintsEnabled: Bool = true
+        keywordHintsEnabled: Bool = true,
+        externalASR: ExternalASRSettings = .defaultSettings
     ) {
         self.engine = engine
         self.keywordHintsEnabled = keywordHintsEnabled
+        self.externalASR = externalASR
     }
 
     public static let defaultSettings = SystemASRSettings()

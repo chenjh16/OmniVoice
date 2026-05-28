@@ -14,6 +14,9 @@ public final class SystemSpeechRecognizer: @unchecked Sendable {
         let audioURL = try writeTemporaryWAV(wavData)
         defer { try? fileManager.removeItem(at: audioURL) }
 
+        if options.engine == .externalASR {
+            return try await recognizeWithExternalASR(wavData: wavData, options: options)
+        }
         if options.engine == .speechAnalyzer {
             if #available(macOS 26.0, *) {
                 return try await recognizeWithSpeechAnalyzer(audioURL: audioURL, options: options)
@@ -31,6 +34,9 @@ public final class SystemSpeechRecognizer: @unchecked Sendable {
         options: SystemSpeechRecognitionOptions,
         onUpdate: @escaping @Sendable (LiveASRUpdate) -> Void
     ) async throws -> any LiveSystemSpeechRecognitionSession {
+        if options.engine == .externalASR {
+            return try await makeExternalASRLiveSession(options: options, onUpdate: onUpdate)
+        }
         if options.engine == .speechAnalyzer {
             if #available(macOS 26.0, *) {
                 try await ensureAuthorization()
@@ -109,6 +115,31 @@ public final class SystemSpeechRecognizer: @unchecked Sendable {
             allowsAppleOnlineRecognition: allowsAppleOnlineRecognition,
             onUpdate: onUpdate
         )
+    }
+
+    private func recognizeWithExternalASR(
+        wavData: Data,
+        options: SystemSpeechRecognitionOptions
+    ) async throws -> ASRRecognitionResult {
+        guard let plugin = options.externalASRPlugin else {
+            throw SystemSpeechRecognitionError.recognitionFailed("External ASR plugin is not selected")
+        }
+        guard let samples = WAVEncoder.decodePCM16Mono16kSamples(wavData) else {
+            throw SystemSpeechRecognitionError.temporaryFileFailed
+        }
+        return try await ExternalASRClient(plugin: plugin).recognize(chunks: [
+            AudioSampleChunk(samples: samples, sampleRate: 16_000)
+        ])
+    }
+
+    private func makeExternalASRLiveSession(
+        options: SystemSpeechRecognitionOptions,
+        onUpdate: @escaping @Sendable (LiveASRUpdate) -> Void
+    ) async throws -> any LiveSystemSpeechRecognitionSession {
+        guard let plugin = options.externalASRPlugin else {
+            throw SystemSpeechRecognitionError.recognitionFailed("External ASR plugin is not selected")
+        }
+        return try await ExternalASRClient(plugin: plugin).makeLiveSession(onUpdate: onUpdate)
     }
 
     private func configureClassicSpeechRequest(

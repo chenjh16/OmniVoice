@@ -80,6 +80,29 @@ struct LiveASRTranscriptAccumulatorTests {
     }
 
     @Test
+    func replacementUpdateOverwritesCurrentWorkingSegment() {
+        var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
+        let start = Date(timeIntervalSince1970: 13)
+
+        _ = accumulator.accept(
+            LiveASRUpdate(text: "Id. Claude Code. Google Voice.", isFinal: false),
+            now: start
+        )
+        let corrected = accumulator.accept(
+            LiveASRUpdate(
+                text: "Claude Code, Google Voice.",
+                isFinal: false,
+                replacesCurrentSegment: true
+            ),
+            now: start.addingTimeInterval(0.2)
+        )
+
+        #expect(corrected?.displayText == "Claude Code, Google Voice.")
+        #expect(corrected?.resolvedText == "Claude Code, Google Voice.")
+        #expect(accumulator.snapshotForFinal().displayText == "Claude Code, Google Voice.")
+    }
+
+    @Test
     func emptyUpdateDoesNotClearExistingDisplayText() {
         var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
         let start = Date(timeIntervalSince1970: 14)

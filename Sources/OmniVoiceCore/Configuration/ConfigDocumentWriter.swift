@@ -80,7 +80,13 @@ enum ConfigDocumentWriter {
         addComment(text.systemASREngine, indent: 4, to: &lines)
         lines.append("    \(jsonString(ConfigSchema.SystemASR.engine)): \(jsonString(config.systemASRSettings.engine.rawValue)),")
         addComment(text.systemASRKeywordHints, indent: 4, to: &lines)
-        lines.append("    \(jsonString(ConfigSchema.SystemASR.keywordHintsEnabled)): \(config.systemASRSettings.keywordHintsEnabled ? "true" : "false")")
+        lines.append("    \(jsonString(ConfigSchema.SystemASR.keywordHintsEnabled)): \(config.systemASRSettings.keywordHintsEnabled ? "true" : "false"),")
+        addComment(text.externalASR, indent: 4, to: &lines)
+        lines.append("    \(jsonString(ConfigSchema.SystemASR.externalASR)): {")
+        let external = config.systemASRSettings.externalASR
+        addComment(text.externalASRProviderID, indent: 6, to: &lines)
+        lines.append("      \(jsonString(ConfigSchema.ExternalASR.providerID)): \(jsonString(external.providerID ?? ""))")
+        lines.append("    }")
         lines.append("  },")
     }
 
@@ -232,7 +238,7 @@ enum ConfigDocumentWriter {
     }
 
     private static func jsonString(_ value: String) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: [value]),
+        guard let data = try? JSONSerialization.data(withJSONObject: [value], options: [.withoutEscapingSlashes]),
               let raw = String(data: data, encoding: .utf8),
               raw.count >= 2 else {
             return "\"\""
@@ -325,20 +331,32 @@ private struct ConfigDocumentText {
 
     var systemASR: [String] {
         language == .chinese
-            ? ["系统 ASR 设置。Apple 在线识别是一个显式引擎选项，选择后可能把音频发送给 Apple。"]
-            : ["System ASR settings. Apple online recognition is an explicit engine choice and may send audio to Apple."]
+            ? ["系统 ASR 设置。Apple 在线识别和 external_asr 都是显式引擎选项，选择后可能把音频发送到对应服务。"]
+            : ["System ASR settings. Apple online recognition and external_asr are explicit engine choices and may send audio to their services."]
     }
 
     var systemASREngine: [String] {
         language == .chinese
-            ? ["识别引擎：speech_analyzer 是默认端侧引擎且需要 macOS 26+；classic_speech 可用于经典端侧识别；apple_online_speech 会允许 Apple 在线识别。"]
-            : ["Recognition engine: speech_analyzer is the default on-device engine and requires macOS 26+; classic_speech uses classic on-device recognition; apple_online_speech allows Apple online recognition."]
+            ? ["识别引擎：speech_analyzer 是默认端侧引擎且需要 macOS 26+；classic_speech 可用于经典端侧识别；apple_online_speech 会允许 Apple 在线识别；external_asr 使用已安装的外部 ASR 插件。"]
+            : ["Recognition engine: speech_analyzer is the default on-device engine and requires macOS 26+; classic_speech uses classic on-device recognition; apple_online_speech allows Apple online recognition; external_asr uses an installed external ASR plugin."]
     }
 
     var systemASRKeywordHints: [String] {
         language == .chinese
             ? ["是否把启用的关键词组提供给系统 ASR 作为上下文提示。"]
             : ["Whether enabled keyword groups are supplied to System ASR as contextual hints."]
+    }
+
+    var externalASR: [String] {
+        language == .chinese
+            ? ["外部 ASR 插件设置。仅当 engine 为 external_asr 时使用；插件由安装命令放到 OmniVoice Plugins 目录。"]
+            : ["External ASR plugin settings. Used only when engine is external_asr; plugins are installed into OmniVoice's Plugins directory by a plugin installer command."]
+    }
+
+    var externalASRProviderID: [String] {
+        language == .chinese
+            ? ["已安装插件的 provider_id。留空时 external_asr 不会启动。"]
+            : ["provider_id of an installed plugin. external_asr cannot start when this is empty."]
     }
 
     var sources: [String] {

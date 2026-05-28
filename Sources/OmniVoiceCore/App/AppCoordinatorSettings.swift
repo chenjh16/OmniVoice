@@ -31,7 +31,21 @@ final class AppCoordinatorSettings {
             configStore.updateModelSettingsInMemory(
                 systemASRSettings: SystemASRSettings(
                     engine: newValue,
-                    keywordHintsEnabled: systemASRKeywordHintsEnabled
+                    keywordHintsEnabled: systemASRKeywordHintsEnabled,
+                    externalASR: configStore.config.systemASRSettings.externalASR
+                )
+            )
+        }
+    }
+
+    var externalASRProviderID: String? {
+        get { configStore.config.systemASRSettings.externalASR.providerID }
+        set {
+            configStore.updateModelSettingsInMemory(
+                systemASRSettings: SystemASRSettings(
+                    engine: systemASREngine,
+                    keywordHintsEnabled: systemASRKeywordHintsEnabled,
+                    externalASR: ExternalASRSettings(providerID: newValue)
                 )
             )
         }
@@ -43,7 +57,8 @@ final class AppCoordinatorSettings {
             configStore.updateModelSettingsInMemory(
                 systemASRSettings: SystemASRSettings(
                     engine: systemASREngine,
-                    keywordHintsEnabled: newValue
+                    keywordHintsEnabled: newValue,
+                    externalASR: configStore.config.systemASRSettings.externalASR
                 )
             )
         }
