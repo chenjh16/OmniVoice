@@ -36,7 +36,12 @@ enum ConfigSchema {
     enum SystemASR {
         static let engine = "engine"
         static let keywordHintsEnabled = "keyword_hints_enabled"
+        static let externalASR = "external_asr"
         static let deprecatedAllowAppleServerRecognition = "allow_apple_server_recognition"
+    }
+
+    enum ExternalASR {
+        static let providerID = "provider_id"
     }
 
     enum Latency {

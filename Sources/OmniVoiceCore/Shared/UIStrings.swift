@@ -170,10 +170,11 @@ public struct UIStrings: Sendable {
         language == .chinese ? "模型：\(model.rawValue)" : "Model: \(model.rawValue)"
     }
 
-    func systemASREngineTitle(_ engine: SystemASREngine) -> String {
-        language == .chinese
-            ? "识别引擎：\(engine.displayName(in: language))"
-            : "Recognition Engine: \(engine.displayName(in: language))"
+    func systemASREngineTitle(_ engine: SystemASREngine, externalProviderName: String? = nil) -> String {
+        let displayName = externalProviderName?.nilIfBlank ?? engine.displayName(in: language)
+        return language == .chinese
+            ? "识别引擎：\(displayName)"
+            : "Recognition Engine: \(displayName)"
     }
 
     func transcriptionSummaryTitle(

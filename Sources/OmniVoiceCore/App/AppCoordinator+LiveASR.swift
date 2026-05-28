@@ -18,13 +18,15 @@ extension AppCoordinator {
         }
         let engines = LiveASREngineFallbackPlanner.engines(primary: primaryEngine)
         let keywordHints = currentSystemASRKeywordHintsContext
+        let externalASRPlugin = selectedExternalASRPlugin
         let task = Task { [weak self] in
             guard let self else { return }
             for (index, engine) in engines.enumerated() {
                 let options = SystemSpeechRecognitionOptions(
                     language: .defaultLanguage,
                     engine: engine,
-                    keywordHints: keywordHints
+                    keywordHints: keywordHints,
+                    externalASRPlugin: externalASRPlugin
                 )
                 do {
                     let session = try await systemSpeechRecognizer.makeLiveSession(

@@ -226,6 +226,10 @@ public enum MenuTooltipCatalog {
             return "通过 macOS 可免费使用，但可能把音频发送给 Apple，并受服务可用性、每日限制和约一分钟任务限制影响。"
         case (.english, .appleOnlineSpeech):
             return "Free through macOS, but may send audio to Apple and can be limited by service availability, daily limits, and roughly one-minute tasks."
+        case (.chinese, .externalASR):
+            return "使用已安装的外部 ASR 插件；音频是否发送到第三方服务取决于该插件。"
+        case (.english, .externalASR):
+            return "Uses an installed external ASR plugin; whether audio is sent to a third-party service depends on that plugin."
         }
     }
 

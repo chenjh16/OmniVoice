@@ -14,6 +14,8 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     var client: any TranscriptionClient
     let recordingSource: any RecordingSource
     weak var automationEventSink: (any AutomationEventSink)?
+    let externalASRPluginRegistry: ExternalASRPluginRegistry
+    var externalASRPlugins: [ExternalASRPlugin]
     let eventTap = EventTapController()
     let hud = DictationHUDController()
     let actionPanel = ActionPanelController()
@@ -171,6 +173,11 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         )
     }
 
+    var selectedExternalASRPlugin: ExternalASRPlugin? {
+        guard let providerID = settings.externalASRProviderID else { return nil }
+        return externalASRPlugins.first { $0.id == providerID }
+    }
+
     var effectiveLiveASREngine: SystemASREngine {
         SystemASRRuntimeRecoveryPlanner.preferredLiveEngine(
             configured: effectiveSystemASREngine,
@@ -202,7 +209,8 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
     init(
         recordingSource: any RecordingSource = AudioRecorder(),
         configStore: AppConfigStore? = nil,
-        automationEventSink: (any AutomationEventSink)? = nil
+        automationEventSink: (any AutomationEventSink)? = nil,
+        externalASRPluginRegistry: ExternalASRPluginRegistry = ExternalASRPluginRegistry()
     ) {
         let resolvedConfigStore = configStore ?? AppConfigStore.shared
         let loaded = resolvedConfigStore.ensureValidConfig(uiLanguage: resolvedConfigStore.config.preferences.uiLanguage)
@@ -210,6 +218,8 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         self.settings = AppCoordinatorSettings(configStore: resolvedConfigStore)
         self.client = MimoAPIClient(config: loaded.resolvingSource(using: [:]))
         self.recordingSource = recordingSource
+        self.externalASRPluginRegistry = externalASRPluginRegistry
+        self.externalASRPlugins = externalASRPluginRegistry.discoverPlugins()
         self.configWatcher = ConfigFileWatcher(fileURL: resolvedConfigStore.configFileURL)
         self.automationEventSink = automationEventSink
         super.init()
@@ -250,7 +260,12 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
         settings.selectedTextLLMModel = loaded.modelCatalogs.textLLMDefaultModel
         settings.pipelineMode = loaded.pipelineMode
         settings.systemASREngine = loaded.systemASRSettings.engine
+        settings.externalASRProviderID = loaded.systemASRSettings.externalASR.providerID
         settings.systemASRKeywordHintsEnabled = loaded.systemASRSettings.keywordHintsEnabled
+    }
+
+    func reloadExternalASRPlugins() {
+        externalASRPlugins = externalASRPluginRegistry.discoverPlugins()
     }
 
     func makeClient(config: MimoConfig) -> any TranscriptionClient {
@@ -297,7 +312,8 @@ final class AppCoordinator: NSObject, NSMenuDelegate {
             pipelineMode: settings.pipelineMode,
             systemASRSettings: SystemASRSettings(
                 engine: settings.systemASREngine,
-                keywordHintsEnabled: settings.systemASRKeywordHintsEnabled
+                keywordHintsEnabled: settings.systemASRKeywordHintsEnabled,
+                externalASR: ExternalASRSettings(providerID: settings.externalASRProviderID)
             ),
             uiLanguage: settings.uiLanguage
         )

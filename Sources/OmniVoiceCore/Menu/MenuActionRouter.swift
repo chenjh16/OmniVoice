@@ -6,6 +6,7 @@ protocol MenuActionRoutingRuntime: AnyObject {
     var globalStopActive: Bool { get }
     var settings: AppCoordinatorSettings { get }
     var config: MimoConfig { get }
+    var externalASRPlugins: [ExternalASRPlugin] { get }
     var strings: UIStrings { get }
     var hud: DictationHUDController { get }
     var actionPanel: ActionPanelController { get }
@@ -101,6 +102,21 @@ final class MenuActionRouter {
         guard let raw = sender.representedObject as? String,
               let engine = SystemASREngine(rawValue: raw) else { return }
         coordinator.settings.systemASREngine = engine
+        coordinator.persistModelAndPipelineSettings()
+        coordinator.rebuildMenu()
+    }
+
+    func selectExternalASRProvider(_ sender: NSMenuItem) {
+        guard let selection = sender.representedObject as? ExternalASRProviderMenuSelection,
+              let settings = ExternalASRSelectionPlanner.settings(
+                selectingProviderID: selection.providerID,
+                installedPlugins: coordinator.externalASRPlugins,
+                current: coordinator.config.systemASRSettings
+              ) else {
+            return
+        }
+        coordinator.settings.systemASREngine = settings.engine
+        coordinator.settings.externalASRProviderID = settings.externalASR.providerID
         coordinator.persistModelAndPipelineSettings()
         coordinator.rebuildMenu()
     }

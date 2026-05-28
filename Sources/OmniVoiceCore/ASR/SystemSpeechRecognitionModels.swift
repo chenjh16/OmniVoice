@@ -36,25 +36,34 @@ public struct SystemSpeechRecognitionOptions: Sendable {
     public let language: LanguagePreference
     public let engine: SystemASREngine
     public let keywordHints: KeywordHintsContext
+    public let externalASRPlugin: ExternalASRPlugin?
 
     public init(
         language: LanguagePreference,
         engine: SystemASREngine,
-        keywordHints: KeywordHintsContext
+        keywordHints: KeywordHintsContext,
+        externalASRPlugin: ExternalASRPlugin? = nil
     ) {
         self.language = language
         self.engine = engine
         self.keywordHints = keywordHints
+        self.externalASRPlugin = externalASRPlugin
     }
 }
 
 public struct LiveASRUpdate: Equatable, Sendable {
     public let text: String
     public let isFinal: Bool
+    public let replacesCurrentSegment: Bool
 
-    public init(text: String, isFinal: Bool) {
+    public init(
+        text: String,
+        isFinal: Bool,
+        replacesCurrentSegment: Bool = false
+    ) {
         self.text = text
         self.isFinal = isFinal
+        self.replacesCurrentSegment = replacesCurrentSegment
     }
 }
 
