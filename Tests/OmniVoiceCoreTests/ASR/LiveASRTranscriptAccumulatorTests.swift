@@ -103,6 +103,33 @@ struct LiveASRTranscriptAccumulatorTests {
     }
 
     @Test
+    func replacementUpdateCanClearCurrentWorkingSegment() {
+        var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
+        let start = Date(timeIntervalSince1970: 13)
+
+        _ = accumulator.accept(
+            LiveASRUpdate(text: "第一段", isFinal: true),
+            now: start
+        )
+        _ = accumulator.accept(
+            LiveASRUpdate(text: "错误尾巴", isFinal: false),
+            now: start.addingTimeInterval(0.2)
+        )
+        let cleared = accumulator.accept(
+            LiveASRUpdate(
+                text: "第一段",
+                isFinal: false,
+                replacesCurrentSegment: true
+            ),
+            now: start.addingTimeInterval(0.4)
+        )
+
+        #expect(cleared?.displayText == "第一段")
+        #expect(cleared?.resolvedText == "第一段")
+        #expect(accumulator.snapshotForFinal().displayText == "第一段")
+    }
+
+    @Test
     func emptyUpdateDoesNotClearExistingDisplayText() {
         var accumulator = LiveASRTranscriptAccumulator(segmentPauseThreshold: 1.2)
         let start = Date(timeIntervalSince1970: 14)

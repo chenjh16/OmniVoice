@@ -14,6 +14,7 @@ struct ExternalASRTests {
         )
         let helper = pluginDirectory.appendingPathComponent("bin/acme-asr-helper")
         try Data().write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
         try writeManifest(
             """
             {
@@ -69,6 +70,69 @@ struct ExternalASRTests {
 
         #expect(plugins.map(\.id) == ["alpha-asr", "zeta-asr"])
         #expect(plugins.map(\.displayName) == ["Alpha ASR", "Zeta ASR"])
+    }
+
+    @Test
+    func registryRejectsNonExecutableManifestEntry() throws {
+        let root = try makeTemporaryPluginRoot()
+        let pluginDirectory = root.appendingPathComponent("quiet-asr", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: pluginDirectory.appendingPathComponent("bin", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        let helper = pluginDirectory.appendingPathComponent("bin/helper")
+        try Data().write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: helper.path)
+        try writeManifest(
+            """
+            {
+              "id": "quiet-asr",
+              "name": "Quiet ASR",
+              "version": "1.0.0",
+              "type": "asr_provider",
+              "entry": "bin/helper",
+              "protocol": "omnivoice-asr-jsonl-v1"
+            }
+            """,
+            to: pluginDirectory
+        )
+
+        let plugins = ExternalASRPluginRegistry(pluginRoots: [root]).discoverPlugins()
+
+        #expect(plugins.isEmpty)
+    }
+
+    @Test
+    func registryRejectsManifestEntryEscapingThroughSymlink() throws {
+        let root = try makeTemporaryPluginRoot()
+        let pluginDirectory = root.appendingPathComponent("linked-asr", isDirectory: true)
+        let outsideDirectory = root.appendingPathComponent("outside-bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: pluginDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        let escapedHelper = outsideDirectory.appendingPathComponent("helper")
+        try Data().write(to: escapedHelper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: escapedHelper.path)
+        try FileManager.default.createSymbolicLink(
+            at: pluginDirectory.appendingPathComponent("bin"),
+            withDestinationURL: outsideDirectory
+        )
+        try writeManifest(
+            """
+            {
+              "id": "linked-asr",
+              "name": "Linked ASR",
+              "version": "1.0.0",
+              "type": "asr_provider",
+              "entry": "bin/helper",
+              "protocol": "omnivoice-asr-jsonl-v1"
+            }
+            """,
+            to: pluginDirectory
+        )
+
+        let plugins = ExternalASRPluginRegistry(pluginRoots: [root]).discoverPlugins()
+
+        #expect(plugins.isEmpty)
     }
 
     @Test
@@ -238,6 +302,46 @@ struct ExternalASRTests {
 
         #expect(result.text == "OpenClaw ACP Codex")
     }
+
+    @Test
+    func externalASRClientTimesOutWhenHelperDoesNotBecomeReady() async throws {
+        let plugin = try makeFakeExternalASRPlugin(script: """
+        #!/bin/sh
+        sleep 2
+        """)
+        let client = ExternalASRClient(plugin: plugin, readyTimeoutSeconds: 0.1)
+
+        do {
+            _ = try await client.makeLiveSession { _ in }
+            Issue.record("Expected helper ready timeout")
+        } catch let error as SystemSpeechRecognitionError {
+            #expect(error == .recognitionFailed("External ASR helper did not become ready before timeout"))
+        }
+    }
+
+    @Test
+    func externalASRClientDrainsHelperStandardError() async throws {
+        let plugin = try makeFakeExternalASRPlugin(script: """
+        #!/bin/sh
+        dd if=/dev/zero bs=65536 count=64 >&2 2>/dev/null
+        while IFS= read -r line; do
+          case "$line" in
+            *start*)
+              printf '%s\\n' '{"type":"ready"}'
+              ;;
+            *finish*)
+              printf '%s\\n' '{"type":"final","text":"stderr drained"}'
+              exit 0
+              ;;
+          esac
+        done
+        """)
+        let client = ExternalASRClient(plugin: plugin, readyTimeoutSeconds: 2)
+
+        let result = try await client.recognize(chunks: [])
+
+        #expect(result.text == "stderr drained")
+    }
 }
 
 private func makeTemporaryPluginRoot() throws -> URL {
@@ -260,6 +364,7 @@ private func makePlugin(
     )
     let helper = pluginDirectory.appendingPathComponent("bin/helper")
     try Data().write(to: helper)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
     try writeManifest(
         """
         {
@@ -304,13 +409,13 @@ private func makeExternalASRPlugin(
     )
 }
 
-private func makeFakeExternalASRPlugin() throws -> ExternalASRPlugin {
+private func makeFakeExternalASRPlugin(script: String = fakeExternalASRHelperScript) throws -> ExternalASRPlugin {
     let root = try makeTemporaryPluginRoot()
     let pluginDirectory = root.appendingPathComponent("fake-asr", isDirectory: true)
     let bin = pluginDirectory.appendingPathComponent("bin", isDirectory: true)
     try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
     let helper = bin.appendingPathComponent("fake-helper")
-    try Data(fakeExternalASRHelperScript.utf8).write(to: helper)
+    try Data(script.utf8).write(to: helper)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
     return makeExternalASRPlugin(
         id: "fake-asr",

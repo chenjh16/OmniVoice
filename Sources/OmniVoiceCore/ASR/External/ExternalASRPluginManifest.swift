@@ -105,10 +105,18 @@ struct ExternalASRPluginManifest: Decodable {
               !components.contains("..") else {
             return nil
         }
-        let pluginDirectory = pluginDirectoryURL.standardizedFileURL
-        let executableURL = pluginDirectory.appendingPathComponent(entry).standardizedFileURL
-        guard executableURL.path.hasPrefix(pluginDirectory.path + "/"),
-              fileManager.fileExists(atPath: executableURL.path) else {
+        let pluginDirectory = pluginDirectoryURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let executableURL = pluginDirectoryURL
+            .appendingPathComponent(entry)
+            .standardizedFileURL
+        let resolvedExecutableURL = executableURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        guard resolvedExecutableURL.path.hasPrefix(pluginDirectory.path + "/"),
+              fileManager.isExecutableFile(atPath: resolvedExecutableURL.path),
+              (try? resolvedExecutableURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
             return nil
         }
         return executableURL

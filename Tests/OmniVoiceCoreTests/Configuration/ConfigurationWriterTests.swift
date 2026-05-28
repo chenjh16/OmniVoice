@@ -23,6 +23,7 @@ extension ConfigurationTests {
         #expect(!raw.contains("allow_apple_server_recognition"))
         #expect(!raw.contains(#""legacy_private_asr""#))
         #expect(!raw.contains("Acme ASR settings"))
+        #expect(!raw.contains(#""external_asr""#))
 
         let normalized = try #require(JSONCNormalizer.normalize(raw).data(using: .utf8))
         let object = try #require(JSONSerialization.jsonObject(with: normalized) as? [String: Any])

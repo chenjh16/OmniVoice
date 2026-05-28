@@ -80,13 +80,16 @@ enum ConfigDocumentWriter {
         addComment(text.systemASREngine, indent: 4, to: &lines)
         lines.append("    \(jsonString(ConfigSchema.SystemASR.engine)): \(jsonString(config.systemASRSettings.engine.rawValue)),")
         addComment(text.systemASRKeywordHints, indent: 4, to: &lines)
-        lines.append("    \(jsonString(ConfigSchema.SystemASR.keywordHintsEnabled)): \(config.systemASRSettings.keywordHintsEnabled ? "true" : "false"),")
-        addComment(text.externalASR, indent: 4, to: &lines)
-        lines.append("    \(jsonString(ConfigSchema.SystemASR.externalASR)): {")
         let external = config.systemASRSettings.externalASR
-        addComment(text.externalASRProviderID, indent: 6, to: &lines)
-        lines.append("      \(jsonString(ConfigSchema.ExternalASR.providerID)): \(jsonString(external.providerID ?? ""))")
-        lines.append("    }")
+        let writesExternalASR = config.systemASRSettings.engine == .externalASR || external.providerID != nil
+        lines.append("    \(jsonString(ConfigSchema.SystemASR.keywordHintsEnabled)): \(config.systemASRSettings.keywordHintsEnabled ? "true" : "false")\(writesExternalASR ? "," : "")")
+        if writesExternalASR {
+            addComment(text.externalASR, indent: 4, to: &lines)
+            lines.append("    \(jsonString(ConfigSchema.SystemASR.externalASR)): {")
+            addComment(text.externalASRProviderID, indent: 6, to: &lines)
+            lines.append("      \(jsonString(ConfigSchema.ExternalASR.providerID)): \(jsonString(external.providerID ?? ""))")
+            lines.append("    }")
+        }
         lines.append("  },")
     }
 

@@ -76,13 +76,9 @@ struct LiveASRTranscriptAccumulator: Equatable, Sendable {
 
     private mutating func replaceCurrentSegment(with text: String) {
         let displayCandidate = candidateWithoutCommittedPrefix(text, committedSegments: committedDisplaySegments)
-        if !displayCandidate.isEmpty {
-            displayWorkingSegment = displayCandidate
-        }
+        displayWorkingSegment = displayCandidate
         let resolvedCandidate = candidateWithoutCommittedPrefix(text, committedSegments: committedResolvedSegments)
-        if !resolvedCandidate.isEmpty {
-            resolvedWorkingSegment = resolvedCandidate
-        }
+        resolvedWorkingSegment = resolvedCandidate
     }
 
     private mutating func acceptDisplayText(_ text: String) {

@@ -3,9 +3,11 @@ import Foundation
 
 public final class ExternalASRClient: @unchecked Sendable {
     private let plugin: ExternalASRPlugin
+    private let readyTimeoutSeconds: TimeInterval
 
-    public init(plugin: ExternalASRPlugin) {
+    public init(plugin: ExternalASRPlugin, readyTimeoutSeconds: TimeInterval = 5) {
         self.plugin = plugin
+        self.readyTimeoutSeconds = readyTimeoutSeconds
     }
 
     public func recognize(chunks: [AudioSampleChunk]) async throws -> ASRRecognitionResult {
@@ -50,10 +52,67 @@ public final class ExternalASRClient: @unchecked Sendable {
         AsyncThrowingStream<ExternalASRResponse, Error>.Iterator
     ) {
         let connection = try ExternalASRProcessConnection(plugin: plugin)
+        return try await withTaskCancellationHandler {
+            do {
+                return try await startConnectionWithTimeout(connection: connection, streaming: streaming)
+            } catch {
+                connection.close()
+                throw error
+            }
+        } onCancel: {
+            connection.close()
+        }
+    }
+
+    private func startConnectionWithTimeout(
+        connection: ExternalASRProcessConnection,
+        streaming: Bool
+    ) async throws -> (
+        ExternalASRProcessConnection,
+        AsyncThrowingStream<ExternalASRResponse, Error>.Iterator
+    ) {
+        try await withThrowingTaskGroup(
+            of: (
+                ExternalASRProcessConnection,
+                AsyncThrowingStream<ExternalASRResponse, Error>.Iterator
+            ).self
+        ) { group in
+            group.addTask {
+                try await waitForReady(connection: connection, streaming: streaming)
+            }
+            group.addTask { [readyTimeoutSeconds] in
+                try await Task.sleep(nanoseconds: Self.timeoutNanoseconds(readyTimeoutSeconds))
+                connection.close()
+                throw SystemSpeechRecognitionError.recognitionFailed(
+                    "External ASR helper did not become ready before timeout"
+                )
+            }
+            guard let result = try await group.next() else {
+                connection.close()
+                throw SystemSpeechRecognitionError.recognitionFailed("External ASR helper ended before ready response")
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private static func timeoutNanoseconds(_ seconds: TimeInterval) -> UInt64 {
+        UInt64(max(0, seconds) * 1_000_000_000)
+    }
+}
+
+private func waitForReady(
+    connection: ExternalASRProcessConnection,
+    streaming: Bool
+) async throws -> (
+    ExternalASRProcessConnection,
+    AsyncThrowingStream<ExternalASRResponse, Error>.Iterator
+) {
         var iterator = connection.responses.makeAsyncIterator()
         try connection.send(try ExternalASRProtocol.startRequest(streaming: streaming))
 
         while let response = try await iterator.next() {
+            try Task.checkCancellation()
             switch response {
             case .ready:
                 return (connection, iterator)
@@ -66,7 +125,6 @@ public final class ExternalASRClient: @unchecked Sendable {
         }
         connection.close()
         throw SystemSpeechRecognitionError.recognitionFailed("External ASR helper ended before ready response")
-    }
 }
 
 final class ExternalASRProcessConnection: @unchecked Sendable {
@@ -75,8 +133,10 @@ final class ExternalASRProcessConnection: @unchecked Sendable {
     private let process: Process
     private let input: FileHandle
     private let output: FileHandle
+    private let errorOutput: FileHandle
     private let responseContinuation: AsyncThrowingStream<ExternalASRResponse, Error>.Continuation
     private let readerQueue = DispatchQueue(label: "omnivoice.external-asr.stdout")
+    private let errorReaderQueue = DispatchQueue(label: "omnivoice.external-asr.stderr")
 
     init(plugin: ExternalASRPlugin) throws {
         let inputPipe = Pipe()
@@ -96,9 +156,11 @@ final class ExternalASRProcessConnection: @unchecked Sendable {
         process.standardError = errorPipe
         input = inputPipe.fileHandleForWriting
         output = outputPipe.fileHandleForReading
+        errorOutput = errorPipe.fileHandleForReading
 
         try process.run()
         startReader()
+        startErrorReader()
     }
 
     func send(_ data: Data) throws {
@@ -133,6 +195,13 @@ final class ExternalASRProcessConnection: @unchecked Sendable {
             } catch {
                 continuation.finish(throwing: error)
             }
+        }
+    }
+
+    private func startErrorReader() {
+        let errorOutput = errorOutput
+        errorReaderQueue.async {
+            while !errorOutput.availableData.isEmpty {}
         }
     }
 
